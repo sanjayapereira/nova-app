@@ -222,10 +222,10 @@ function withAddedStops(trip: Trip, addedStops: AddedStop[]): Trip {
       if (stop) return
     }
     const baseIndex = trip.legs.findIndex((baseLeg) => baseLeg.id === leg.id) - 1
-    stepLabels.push(trip.stepLabels[baseIndex])
-    narrativesFar.push(trip.narrativesFar[baseIndex])
-    narrativesNear.push(trip.narrativesNear[baseIndex])
-    arrivals.push(trip.arrivals[baseIndex])
+    stepLabels.push(trip.stepLabels[baseIndex] ?? RIDE_MODE_LABELS[leg.type as RideMode] ?? 'Transit')
+    narrativesFar.push(trip.narrativesFar[baseIndex] ?? `Routing you to ${leg.name}.`)
+    narrativesNear.push(trip.narrativesNear[baseIndex] ?? `${leg.name} is coming up. Get ready.`)
+    arrivals.push(trip.arrivals[baseIndex] ?? finalArrival)
   })
 
   return {

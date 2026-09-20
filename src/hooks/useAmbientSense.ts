@@ -8,7 +8,7 @@ let speechMuted = false
 function dispatchSpeechState(active: boolean) {
   if (typeof document !== 'undefined') {
     document.documentElement.toggleAttribute('data-nova-speaking', active)
-    document.documentElement.style.setProperty('--nova-voice-opacity', active ? '0.9' : '0')
+    document.documentElement.style.setProperty('--nova-voice-opacity', active ? '0.18' : '0')
   }
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('nova:speech-state', { detail: { active } }))
 }
@@ -16,7 +16,7 @@ function dispatchSpeechState(active: boolean) {
 function dispatchSpeechPulse() {
   if (typeof document !== 'undefined') {
     document.documentElement.style.setProperty('--nova-voice-opacity', '1')
-    window.setTimeout(() => document.documentElement.style.setProperty('--nova-voice-opacity', '0.9'), 220)
+    window.setTimeout(() => document.documentElement.style.setProperty('--nova-voice-opacity', '0.18'), 320)
   }
 }
 
@@ -56,17 +56,10 @@ function flushSpeechQueue() {
   utterance.voice = preferredVoice() ?? null
   let finished = false
   let fallbackTimer: number | undefined
-  const pulseTimer = window.setInterval(() => {
-    if (!finished) {
-      dispatchSpeechPulse()
-      window.dispatchEvent(new CustomEvent('nova:speech-pulse', { detail: { speechId } }))
-    }
-  }, 420)
   const finish = () => {
     if (finished) return
     finished = true
     if (fallbackTimer) window.clearTimeout(fallbackTimer)
-    window.clearInterval(pulseTimer)
     speechBusy = false
     window.dispatchEvent(new CustomEvent('nova:speech-end', { detail: { speechId } }))
     job.onEnd?.()
