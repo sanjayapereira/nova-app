@@ -15,13 +15,20 @@ function speak(text: string, onEnd?: () => void) {
       return
     }
     window.speechSynthesis.cancel()
+    window.dispatchEvent(new CustomEvent('nova:speech-start'))
     const utterance = new SpeechSynthesisUtterance(text)
     utterance.rate = 0.92
     utterance.pitch = 1
-    utterance.onend = () => onEnd?.()
+    const finish = () => {
+      window.dispatchEvent(new CustomEvent('nova:speech-end'))
+      onEnd?.()
+    }
+    utterance.onend = finish
+    utterance.onerror = finish
     window.speechSynthesis.speak(utterance)
   } catch {
     // Speech is optional and may be blocked by the browser.
+    window.dispatchEvent(new CustomEvent('nova:speech-end'))
     onEnd?.()
   }
 }

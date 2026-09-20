@@ -593,7 +593,8 @@ function JourneyScreen({ trip, onNext, onAddStops, onBack }: { trip: Trip; onNex
 
   const startJourney = () => {
     const hapticsUnavailable = !primeHaptics()
-    announceJourneyStart('Stay at your location. Your autonomous shuttle will arrive shortly.', () => onNext(hapticsUnavailable))
+    onNext(hapticsUnavailable)
+    announceJourneyStart('Stay at your location. Your autonomous shuttle will arrive shortly.')
   }
 
   return (
@@ -1113,11 +1114,23 @@ export default function App() {
   const [tripId, setTripId] = useState<string>('local')
   const [addedStops, setAddedStops] = useState<AddedStop[]>([])
   const [hapticsUnavailable, setHapticsUnavailable] = useState(false)
+  const [speechActive, setSpeechActive] = useState(false)
   const trip = withAddedStops(TRIPS[tripId], addedStops)
+
+  useEffect(() => {
+    const onSpeechStart = () => setSpeechActive(true)
+    const onSpeechEnd = () => setSpeechActive(false)
+    window.addEventListener('nova:speech-start', onSpeechStart)
+    window.addEventListener('nova:speech-end', onSpeechEnd)
+    return () => {
+      window.removeEventListener('nova:speech-start', onSpeechStart)
+      window.removeEventListener('nova:speech-end', onSpeechEnd)
+    }
+  }, [])
 
   return (
     <div
-      className="app-shell mx-auto bg-[#F7F7F5] min-h-screen relative overflow-x-hidden"
+      className={`app-shell mx-auto bg-[#F7F7F5] min-h-screen relative overflow-x-hidden ${speechActive ? 'voice-speaking' : ''}`}
       style={{ boxShadow: '0 0 0 1px #D8D8D3' }}
     >
       <div className="ambient-field" aria-hidden="true">
