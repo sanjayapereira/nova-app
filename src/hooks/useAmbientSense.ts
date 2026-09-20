@@ -35,8 +35,8 @@ export function useAmbientSense() {
     speak(`${greeting}, ${name}. Where are you headed?`)
   }, [])
 
-  const announceJourneyStart = useCallback((instruction: string) => {
-    speak(`Your journey is starting. ${instruction}`)
+  const announceJourneyStart = useCallback((instruction: string, onEnd?: () => void) => {
+    speak(`Your journey is starting. ${instruction}`, onEnd)
   }, [])
 
   const announceInstruction = useCallback((instruction: string, onEnd?: () => void) => {

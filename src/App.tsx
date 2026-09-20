@@ -592,8 +592,8 @@ function JourneyScreen({ trip, onNext, onAddStops, onBack }: { trip: Trip; onNex
   const { primeHaptics, announceJourneyStart } = useAmbientSense()
 
   const startJourney = () => {
-    announceJourneyStart('Stay at your location. Your autonomous shuttle will arrive shortly.')
-    onNext(!primeHaptics())
+    const hapticsUnavailable = !primeHaptics()
+    announceJourneyStart('Stay at your location. Your autonomous shuttle will arrive shortly.', () => onNext(hapticsUnavailable))
   }
 
   return (
@@ -726,7 +726,8 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
     if (arrived) return
     const tick = 100 // ms
     if (phase === 'walking' && !walkingStarted) return
-    const phaseDuration = phase === 'waiting' ? 6 : phase === 'walking' ? 5 : phase === 'boarding' ? 3 : LEG_DURATION
+    if (phase === 'boarding') return
+    const phaseDuration = phase === 'waiting' ? 6 : phase === 'walking' ? 5 : LEG_DURATION
     const increment = tick / (phaseDuration * 1000)
 
     const t = setInterval(() => {
@@ -758,14 +759,11 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
     if (phase === 'waiting') {
       setPhase('boarding')
       setLegProgress(0)
-      announceInstruction('Your shuttle is here. Board through the nearest door.')
-      return
-    }
-
-    if (phase === 'boarding') {
-      setPhase('riding')
-      setLegProgress(0)
-      triggerBoard()
+      announceInstruction('Your shuttle is here. Board through the nearest door.', () => {
+        setPhase('riding')
+        setLegProgress(0)
+        triggerBoard()
+      })
       return
     }
 
@@ -774,7 +772,11 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
       setPhase('boarding')
       setWalkingStarted(false)
       setLegProgress(0)
-      announceInstruction(`You have reached ${trip.legs[step + 1]?.name ?? 'your stop'}. Board the next vehicle when it is ready.`)
+      announceInstruction(`You have reached ${trip.legs[step + 1]?.name ?? 'your stop'}. Board the next vehicle when it is ready.`, () => {
+        setPhase('riding')
+        setLegProgress(0)
+        triggerBoard()
+      })
       return
     }
 
@@ -837,8 +839,7 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
 
   const openWalkingPath = () => {
     setMapView(true)
-    setWalkingStarted(true)
-    announceInstruction('Walking path open. Follow the highlighted street route to the next stop.')
+    announceInstruction('Walking path open. Follow the highlighted street route to the next stop.', () => setWalkingStarted(true))
   }
 
   return (
