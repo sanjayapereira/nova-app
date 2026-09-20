@@ -450,7 +450,13 @@ function HomeScreen({ onSearch }: { onSearch: (query: string) => void }) {
 
         <div className="flex justify-center">
           <button
-            onClick={() => onSearch(query)}
+            onClick={() => {
+              if (!query.trim()) {
+                setVoiceNote('Enter or select a destination before continuing.')
+                return
+              }
+              onSearch(query)
+            }}
             className="bg-[#1E4D8C] text-white text-[17px] font-700 px-10 py-4 rounded-full min-h-[56px] hover:bg-[#163a6e] active:scale-[0.98] transition-all"
           >
             Get me there
@@ -842,9 +848,15 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable, voiceReady
   const dotX = ep.start.x + (ep.end.x - ep.start.x) * legProgress
   const dotY = ep.start.y + (ep.end.y - ep.start.y) * legProgress
   const walkStart = trip.mapStops[Math.min(step, trip.mapStops.length - 1)]
-  const walkEnd = { x: Math.min(walkStart.x + 42, 315), y: Math.max(walkStart.y - 30, 24) }
-  const mapDotX = phase === 'walking' ? walkStart.x + (walkEnd.x - walkStart.x) * legProgress : dotX
-  const mapDotY = phase === 'walking' ? walkStart.y + (walkEnd.y - walkStart.y) * legProgress : dotY
+  const walkEnd = step > 0
+    ? { x: Math.min(walkStart.x + 24, 315), y: Math.max(walkStart.y - 28, 24) }
+    : walkStart
+  const activeSegmentStart = step > 0 ? walkEnd : ep.start
+  const activeDotX = activeSegmentStart.x + (ep.end.x - activeSegmentStart.x) * legProgress
+  const activeDotY = activeSegmentStart.y + (ep.end.y - activeSegmentStart.y) * legProgress
+  const mapDotX = phase === 'walking' ? walkStart.x + (walkEnd.x - walkStart.x) * legProgress : activeDotX
+  const mapDotY = phase === 'walking' ? walkStart.y + (walkEnd.y - walkStart.y) * legProgress : activeDotY
+  const routePoints = trip.mapStops.map((stop, index) => index === step && step > 0 ? walkEnd : stop)
 
   const openWalkingPath = () => {
     setMapView(true)
@@ -999,8 +1011,8 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable, voiceReady
         </div>
       ) : (
         /* Map view — transport follows the route; walking uses its own street path. */
-        <div className="flex-1 mx-6 mb-8 rounded-3xl overflow-hidden relative bg-[#EDEDEA]">
-          <button onClick={phase === 'walking' && !walkingStarted ? openWalkingPath : undefined} className={`w-full h-full text-left ${phase === 'walking' && !walkingStarted ? 'cursor-pointer' : ''}`} aria-label={phase === 'walking' && !walkingStarted ? 'Open walking path' : undefined}>
+        <div className="flex-1 mx-6 mb-8 flex flex-col rounded-3xl overflow-hidden relative bg-[#EDEDEA]">
+          <button onClick={phase === 'walking' && !walkingStarted ? openWalkingPath : undefined} className={`relative flex-1 w-full min-h-[380px] text-left ${phase === 'walking' && !walkingStarted ? 'cursor-pointer' : ''}`} aria-label={phase === 'walking' && !walkingStarted ? 'Open walking path' : undefined}>
           <svg viewBox="0 0 340 520" className="w-full h-full" style={{ minHeight: 380 }}>
             <rect width="340" height="520" fill="#EDEDEA" />
             {/* Background road grid */}
@@ -1023,7 +1035,7 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable, voiceReady
 
             {/* Full route */}
             <polyline
-              points={trip.mapStops.map((s) => `${s.x},${s.y}`).join(' ')}
+              points={routePoints.map((s) => `${s.x},${s.y}`).join(' ')}
               fill="none"
               stroke="#1E4D8C"
               strokeWidth="3"
@@ -1035,8 +1047,8 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable, voiceReady
             {/* Active segment progress */}
             {phase !== 'walking' && (
               <line
-                x1={ep.start.x} y1={ep.start.y}
-                x2={dotX} y2={dotY}
+                x1={activeSegmentStart.x} y1={activeSegmentStart.y}
+                x2={activeDotX} y2={activeDotY}
                 stroke="#1E4D8C"
                 strokeWidth="3"
                 strokeLinecap="round"
@@ -1096,7 +1108,7 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable, voiceReady
           </svg>
           </button>
 
-          <div className="absolute bottom-4 left-4 right-4 bg-white/90 backdrop-blur rounded-2xl px-4 py-3">
+          <div className="shrink-0 bg-white/90 backdrop-blur px-4 py-3 border-t border-[#D8D8D3]">
             <p className="text-[13px] font-600 text-[#1C1F26]">{trip.stepLabels[step]} · {proximityLabel.toLowerCase()}</p>
             <p className="text-[12px] text-[#1C1F26]/50">Next stop · {trip.arrivals[step]}</p>
           </div>
