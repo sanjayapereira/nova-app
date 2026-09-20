@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAmbientSense } from './hooks/useAmbientSense'
 
-type Screen = 'home' | 'journey' | 'tracking'
+type Screen = 'home' | 'journey' | 'add-stops' | 'tracking'
 
 type Leg = {
   id: string
@@ -12,6 +12,9 @@ type Leg = {
   detail: string
   delayed: boolean
 }
+
+type RideMode = 'shuttle' | 'train' | 'air' | 'road'
+type AddedStop = { id: string; name: string; mode: RideMode; reason: string }
 
 type Point = { x: number; y: number }
 type MapStop = { x: number; y: number; label: string; anchor: 'start' | 'end'; dest?: boolean }
@@ -136,6 +139,71 @@ const TRIPS: Record<string, Trip> = {
       { x: 222, y: 100, text: 'smart road' },
     ],
   },
+}
+
+const RIDE_MODE_LABELS: Record<RideMode, string> = {
+  shuttle: 'Shuttle',
+  train: 'Train',
+  air: 'Air pod',
+  road: 'Smart road',
+}
+
+function suggestTransport(stopName: string): { mode: RideMode; reason: string } {
+  const name = stopName.trim().toLowerCase()
+  if (name.includes('station') || name.includes('fort') || name.includes('rail')) {
+    return { mode: 'train', reason: 'A train is the quickest fit for a station or rail connection.' }
+  }
+  if (name.includes('airport') || name.includes('terminal') || name.includes('gate')) {
+    return { mode: 'air', reason: 'An air pod keeps terminal journeys fast and avoids surface traffic.' }
+  }
+  if (name.includes('highway') || name.includes('road') || name.includes('hub')) {
+    return { mode: 'road', reason: 'Smart road can take you directly there with live traffic routing.' }
+  }
+  return { mode: 'shuttle', reason: 'A shuttle is the most flexible option for a local stop.' }
+}
+
+function withAddedStops(trip: Trip, addedStops: AddedStop[]): Trip {
+  if (!addedStops.length) return trip
+
+  const destination = trip.legs[trip.legs.length - 1]
+  const finalArrival = trip.arrivals[trip.arrivals.length - 1]
+  const customLegs: Leg[] = addedStops.map((stop) => ({
+    id: `added-${stop.id}`,
+    type: stop.mode,
+    name: stop.name,
+    sub: `${RIDE_MODE_LABELS[stop.mode]} · added stop`,
+    time: finalArrival,
+    detail: stop.reason,
+    delayed: false,
+  }))
+  const mapDestination = trip.mapStops[trip.mapStops.length - 1]
+  const previousStop = trip.mapStops[trip.mapStops.length - 2]
+  const customMapStops: MapStop[] = addedStops.map((stop, index) => {
+    const progress = (index + 1) / (addedStops.length + 1)
+    return {
+      x: previousStop.x + (mapDestination.x - previousStop.x) * progress,
+      y: previousStop.y + (mapDestination.y - previousStop.y) * progress,
+      label: stop.name,
+      anchor: 'end',
+    }
+  })
+  const mapStops = [...trip.mapStops.slice(0, -1), ...customMapStops, mapDestination]
+
+  return {
+    ...trip,
+    legs: [...trip.legs.slice(0, -1), ...customLegs, destination],
+    stepLabels: [...trip.stepLabels, ...addedStops.map((stop) => RIDE_MODE_LABELS[stop.mode])],
+    narrativesFar: [...trip.narrativesFar, ...addedStops.map((stop) => `Routing you to ${stop.name}.`)],
+    narrativesNear: [...trip.narrativesNear, ...addedStops.map((stop) => `${stop.name} is coming up. Get ready.`)],
+    arrivals: [...trip.arrivals.slice(0, -1), ...addedStops.map(() => finalArrival), finalArrival],
+    legEndpoints: mapStops.slice(0, -1).map((start, index) => ({ start: { x: start.x, y: start.y }, end: { x: mapStops[index + 1].x, y: mapStops[index + 1].y } })),
+    mapStops,
+    segmentLabels: [
+      ...trip.segmentLabels,
+      ...customMapStops.map((stop, index) => ({ x: stop.x - 24, y: stop.y - 12, text: RIDE_MODE_LABELS[addedStops[index].mode].toLowerCase() })),
+    ],
+    whyThisRoute: `${trip.whyThisRoute} Added stops: ${addedStops.map((stop) => `${stop.name} via ${RIDE_MODE_LABELS[stop.mode]}`).join(', ')}.`,
+  }
 }
 
 function resolveTripId(query: string): string {
@@ -348,9 +416,92 @@ function HomeScreen({ onSearch }: { onSearch: (query: string) => void }) {
   )
 }
 
+// ─── Add stops ──────────────────────────────────────────────────────────────
+
+function AddStopsScreen({ stops, onAdd, onRemove, onBack }: { stops: AddedStop[]; onAdd: (stop: AddedStop) => void; onRemove: (id: string) => void; onBack: () => void }) {
+  const [draft, setDraft] = useState('')
+  const [selectedMode, setSelectedMode] = useState<RideMode | null>(null)
+  const suggestion = suggestTransport(draft)
+  const chosenMode = selectedMode ?? suggestion.mode
+
+  const addStop = () => {
+    const name = draft.trim()
+    if (!name) return
+    onAdd({ id: `${Date.now()}-${name}`, name, mode: chosenMode, reason: selectedMode ? `You chose ${RIDE_MODE_LABELS[chosenMode]} for this stop.` : suggestion.reason })
+    setDraft('')
+    setSelectedMode(null)
+  }
+
+  return (
+    <div className="flex flex-col min-h-screen px-6 pt-12 pb-10">
+      <button onClick={onBack} className="text-[#1E4D8C] text-[15px] font-600 mb-8 flex items-center gap-1 -ml-0.5">← Journey</button>
+      <p className="text-[13px] text-[#1C1F26]/50 mb-1">Make the route yours</p>
+      <h1 className="text-[32px] leading-tight font-800 text-[#1C1F26] mb-2">Add a stop</h1>
+      <p className="text-[14px] text-[#1C1F26]/60 leading-relaxed mb-8">NOVA will add your stops to every route and suggest the best way to reach each one.</p>
+
+      <div className="border-b-2 border-[#1E4D8C] pb-3 mb-5">
+        <input
+          value={draft}
+          onChange={(event) => { setDraft(event.target.value); setSelectedMode(null) }}
+          onKeyDown={(event) => { if (event.key === 'Enter') addStop() }}
+          placeholder="Where would you like to stop?"
+          className="w-full text-[17px] text-[#1C1F26] placeholder:text-[#1C1F26]/45 bg-transparent outline-none"
+          autoFocus
+        />
+      </div>
+
+      {draft.trim() && (
+        <div className="bg-[#EDEDEA] rounded-2xl p-4 mb-6 animate-slide-up">
+          <p className="text-[11px] uppercase tracking-widest font-700 text-[#1C1F26]/45 mb-2">NOVA suggests</p>
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-9 h-9 rounded-full bg-[#1E4D8C] text-white flex items-center justify-center"><ModeGlyph type={chosenMode} /></div>
+            <div>
+              <p className="text-[16px] font-700 text-[#1C1F26]">{RIDE_MODE_LABELS[chosenMode]}</p>
+              <p className="text-[13px] text-[#1C1F26]/60">{selectedMode ? 'Your preferred option' : suggestion.reason}</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 mt-4">
+            {(Object.keys(RIDE_MODE_LABELS) as RideMode[]).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setSelectedMode(mode)}
+                className={`px-3 py-2 rounded-full text-[12px] font-700 border transition-colors ${chosenMode === mode ? 'bg-[#1E4D8C] border-[#1E4D8C] text-white' : 'border-[#D8D8D3] text-[#1C1F26]/60'}`}
+              >
+                {RIDE_MODE_LABELS[mode]}
+              </button>
+            ))}
+          </div>
+          <button onClick={addStop} className="w-full mt-4 bg-[#1E4D8C] text-white text-[15px] font-700 py-3 rounded-full">Add this stop</button>
+        </div>
+      )}
+
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[12px] text-[#1C1F26]/60 uppercase tracking-widest font-600">Your added stops</p>
+          <p className="text-[12px] text-[#1C1F26]/45">All routes</p>
+        </div>
+        {stops.length === 0 ? (
+          <p className="text-[14px] text-[#1C1F26]/45 border-b border-[#D8D8D3] pb-4">No extra stops yet.</p>
+        ) : stops.map((stop) => (
+          <div key={stop.id} className="flex items-center gap-3 py-3 border-b border-[#D8D8D3]">
+            <div className="w-8 h-8 rounded-full bg-[#1E4D8C] text-white flex items-center justify-center flex-shrink-0"><ModeGlyph type={stop.mode} /></div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[15px] font-700 text-[#1C1F26] truncate">{stop.name}</p>
+              <p className="text-[12px] text-[#1C1F26]/55">{RIDE_MODE_LABELS[stop.mode]} · {stop.reason}</p>
+            </div>
+            <button onClick={() => onRemove(stop.id)} aria-label={`Remove ${stop.name}`} className="text-[#B94A48] text-[13px] font-700">Remove</button>
+          </div>
+        ))}
+      </div>
+
+      <button onClick={onBack} className="mt-auto w-full bg-[#1E4D8C] text-white text-[17px] font-700 py-4 rounded-full min-h-[56px]">Done</button>
+    </div>
+  )
+}
+
 // ─── Journey ────────────────────────────────────────────────────────────────
 
-function JourneyScreen({ trip, onNext, onBack }: { trip: Trip; onNext: () => void; onBack: () => void }) {
+function JourneyScreen({ trip, onNext, onAddStops, onBack }: { trip: Trip; onNext: () => void; onAddStops: () => void; onBack: () => void }) {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [whyOpen, setWhyOpen] = useState(false)
 
@@ -448,6 +599,9 @@ function JourneyScreen({ trip, onNext, onBack }: { trip: Trip; onNext: () => voi
           >
             Start journey
           </button>
+        </div>
+        <div className="flex justify-center mt-3">
+          <button onClick={onAddStops} className="text-[#1E4D8C] text-[15px] font-700 px-6 py-3">+ Add stops</button>
         </div>
       </div>
     </div>
@@ -785,7 +939,8 @@ function TrackingScreen({ trip, onBack, onCancel }: { trip: Trip; onBack: () => 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('home')
   const [tripId, setTripId] = useState<string>('local')
-  const trip = TRIPS[tripId]
+  const [addedStops, setAddedStops] = useState<AddedStop[]>([])
+  const trip = withAddedStops(TRIPS[tripId], addedStops)
 
   return (
     <div
@@ -811,7 +966,15 @@ export default function App() {
           />
         )}
         {screen === 'journey' && (
-          <JourneyScreen trip={trip} onNext={() => setScreen('tracking')} onBack={() => setScreen('home')} />
+          <JourneyScreen trip={trip} onNext={() => setScreen('tracking')} onAddStops={() => setScreen('add-stops')} onBack={() => setScreen('home')} />
+        )}
+        {screen === 'add-stops' && (
+          <AddStopsScreen
+            stops={addedStops}
+            onAdd={(stop) => setAddedStops((current) => [...current, stop])}
+            onRemove={(id) => setAddedStops((current) => current.filter((stop) => stop.id !== id))}
+            onBack={() => setScreen('journey')}
+          />
         )}
         {screen === 'tracking' && (
           <TrackingScreen trip={trip} onBack={() => setScreen('journey')} onCancel={() => setScreen('home')} />
