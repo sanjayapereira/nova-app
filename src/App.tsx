@@ -456,12 +456,13 @@ function JourneyScreen({ trip, onNext, onBack }: { trip: Trip; onNext: () => voi
 
 // ─── Tracking ───────────────────────────────────────────────────────────────
 
-function TrackingScreen({ trip, onBack }: { trip: Trip; onBack: () => void }) {
+function TrackingScreen({ trip, onBack, onCancel }: { trip: Trip; onBack: () => void; onCancel: () => void }) {
   const [mapView, setMapView] = useState(false)
   const [step, setStep] = useState(0)
   const [legProgress, setLegProgress] = useState(0) // 0→1 within each leg
   const [arrived, setArrived] = useState(false)
   const approachFiredRef = useRef(false)
+  const legArrivalFiredRef = useRef(false)
 
   const { triggerApproaching, triggerBoard, triggerLegArrival, triggerDestination } = useAmbientSense()
 
@@ -495,13 +496,15 @@ function TrackingScreen({ trip, onBack }: { trip: Trip; onBack: () => void }) {
       triggerApproaching()
     }
 
-    // Leg complete — a distinct arrival vibration fires for every vehicle
-    // mode (shuttle, train, air pod, smart road), then either boarding the
-    // next vehicle or the final destination confirmation.
+    // Fire once at the arrival edge. The ref also prevents duplicate cues
+    // during React Strict Mode or while the transition timer is pending.
     if (legProgress >= 1) {
+      if (legArrivalFiredRef.current) return
+      legArrivalFiredRef.current = true
+      triggerLegArrival()
+
       const next = step + 1
-      setTimeout(() => {
-        triggerLegArrival()
+      const transitionTimer = setTimeout(() => {
         if (next >= trip.stepLabels.length) {
           setTimeout(() => {
             setArrived(true)
@@ -509,11 +512,14 @@ function TrackingScreen({ trip, onBack }: { trip: Trip; onBack: () => void }) {
           }, 350)
         } else {
           approachFiredRef.current = false
+          legArrivalFiredRef.current = false
           setStep(next)
           setLegProgress(0)
           triggerBoard()
         }
       }, 500)
+
+      return () => clearTimeout(transitionTimer)
     }
   }, [legProgress, step, arrived, trip.stepLabels.length, triggerApproaching, triggerBoard, triggerLegArrival, triggerDestination])
 
@@ -761,6 +767,15 @@ function TrackingScreen({ trip, onBack }: { trip: Trip; onBack: () => void }) {
           </div>
         </div>
       )}
+
+      <div className="px-6 pb-8">
+        <button
+          onClick={onCancel}
+          className="w-full min-h-[50px] rounded-full border border-[#B94A48]/40 text-[#B94A48] text-[15px] font-600 hover:bg-[#B94A48]/8 active:scale-[0.98] transition-all"
+        >
+          Cancel journey
+        </button>
+      </div>
     </div>
   )
 }
@@ -798,7 +813,9 @@ export default function App() {
         {screen === 'journey' && (
           <JourneyScreen trip={trip} onNext={() => setScreen('tracking')} onBack={() => setScreen('home')} />
         )}
-        {screen === 'tracking' && <TrackingScreen trip={trip} onBack={() => setScreen('journey')} />}
+        {screen === 'tracking' && (
+          <TrackingScreen trip={trip} onBack={() => setScreen('journey')} onCancel={() => setScreen('home')} />
+        )}
       </div>
     </div>
   )

@@ -1,7 +1,9 @@
 import { useRef, useCallback } from 'react'
 
 function vibrate(pattern: number[]) {
-  if ('vibrate' in navigator) navigator.vibrate(pattern)
+  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+    navigator.vibrate(pattern)
+  }
 }
 
 export function useAmbientSense() {
