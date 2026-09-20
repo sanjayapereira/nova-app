@@ -3,6 +3,11 @@ import { useRef, useCallback } from 'react'
 let speechSequence = 0
 let speechQueue: { text: string; onEnd?: () => void }[] = []
 let speechBusy = false
+let speechMuted = false
+
+function dispatchSpeechState(active: boolean) {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('nova:speech-state', { detail: { active } }))
+}
 
 function preferredVoice(): SpeechSynthesisVoice | undefined {
   if (typeof navigator === 'undefined' || typeof window === 'undefined') return undefined
@@ -18,7 +23,10 @@ function preferredVoice(): SpeechSynthesisVoice | undefined {
 }
 
 function flushSpeechQueue() {
-  if (speechBusy || speechQueue.length === 0) return
+  if (speechMuted || speechBusy || speechQueue.length === 0) {
+    if (!speechBusy && speechQueue.length === 0) dispatchSpeechState(false)
+    return
+  }
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
     const job = speechQueue.shift()
     job?.onEnd?.()
@@ -29,6 +37,7 @@ function flushSpeechQueue() {
   const job = speechQueue.shift()!
   speechBusy = true
   const speechId = ++speechSequence
+  dispatchSpeechState(true)
   window.dispatchEvent(new CustomEvent('nova:speech-start', { detail: { speechId } }))
   const utterance = new SpeechSynthesisUtterance(job.text)
   utterance.rate = 0.92
@@ -43,7 +52,10 @@ function flushSpeechQueue() {
     speechBusy = false
     window.dispatchEvent(new CustomEvent('nova:speech-end', { detail: { speechId } }))
     job.onEnd?.()
-    window.setTimeout(flushSpeechQueue, 0)
+    window.setTimeout(() => {
+      flushSpeechQueue()
+      if (!speechBusy && speechQueue.length === 0) dispatchSpeechState(false)
+    }, 0)
   }
   utterance.onend = finish
   utterance.onerror = finish
@@ -62,6 +74,10 @@ function vibrate(pattern: number[]): boolean {
 }
 
 function speak(text: string, onEnd?: () => void) {
+  if (speechMuted) {
+    onEnd?.()
+    return
+  }
   try {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       onEnd?.()
@@ -78,6 +94,16 @@ export function useAmbientSense() {
   const audioCtxRef = useRef<AudioContext | null>(null)
 
   const primeHaptics = useCallback(() => vibrate([700]), [])
+
+  const setSpeechMuted = useCallback((muted: boolean) => {
+    speechMuted = muted
+    if (muted) {
+      speechQueue = []
+      speechBusy = false
+      window.speechSynthesis?.cancel()
+      dispatchSpeechState(false)
+    }
+  }, [])
 
   const announceGreeting = useCallback((name: string, greeting: string) => {
     speak(`${greeting}, ${name}. Where are you headed?`)
@@ -170,5 +196,5 @@ export function useAmbientSense() {
     vibrate([80, 60, 120, 60, 200])
   }, [playTone])
 
-  return { primeHaptics, announceGreeting, announceJourneyStart, announceInstruction, announceLegArrival, triggerApproaching, triggerBoard, triggerTransfer, triggerLegArrival, triggerDestination }
+  return { primeHaptics, setSpeechMuted, announceGreeting, announceJourneyStart, announceInstruction, announceLegArrival, triggerApproaching, triggerBoard, triggerTransfer, triggerLegArrival, triggerDestination }
 }

@@ -1154,25 +1154,23 @@ export default function App() {
   const [hapticsUnavailable, setHapticsUnavailable] = useState(false)
   const [voiceReady, setVoiceReady] = useState(false)
   const [speechActive, setSpeechActive] = useState(false)
+  const [speechMuted, setSpeechMutedState] = useState(false)
+  const { setSpeechMuted } = useAmbientSense()
   const trip = withAddedStops(TRIPS[tripId], addedStops)
 
   useEffect(() => {
-    let activeSpeechId = 0
-    const onSpeechStart = (event: Event) => {
-      activeSpeechId = (event as CustomEvent<{ speechId: number }>).detail.speechId
-      setSpeechActive(true)
-    }
-    const onSpeechEnd = (event: Event) => {
-      const speechId = (event as CustomEvent<{ speechId: number }>).detail.speechId
-      if (speechId === activeSpeechId) setSpeechActive(false)
-    }
-    window.addEventListener('nova:speech-start', onSpeechStart)
-    window.addEventListener('nova:speech-end', onSpeechEnd)
+    const onSpeechState = (event: Event) => setSpeechActive((event as CustomEvent<{ active: boolean }>).detail.active)
+    window.addEventListener('nova:speech-state', onSpeechState)
     return () => {
-      window.removeEventListener('nova:speech-start', onSpeechStart)
-      window.removeEventListener('nova:speech-end', onSpeechEnd)
+      window.removeEventListener('nova:speech-state', onSpeechState)
     }
   }, [])
+
+  const toggleSpeech = () => {
+    const nextMuted = !speechMuted
+    setSpeechMutedState(nextMuted)
+    setSpeechMuted(nextMuted)
+  }
 
   return (
     <div
@@ -1187,6 +1185,24 @@ export default function App() {
       <div className="absolute top-5 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
         <span className="text-[11px] font-800 text-[#1C1F26]/25 tracking-[0.2em]">NOVA</span>
       </div>
+
+      <button
+        onClick={toggleSpeech}
+        className="speech-toggle absolute top-3 right-4 z-50 w-10 h-10 rounded-full flex items-center justify-center"
+        aria-label={speechMuted ? 'Turn voice on' : 'Mute voice'}
+        aria-pressed={speechMuted}
+        title={speechMuted ? 'Turn voice on' : 'Mute voice'}
+      >
+        {speechMuted ? (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <path d="M11 5 6 9H3v6h3l5 4V5Z" /><path d="m19 9-6 6M13 9l6 6" />
+          </svg>
+        ) : (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <path d="M11 5 6 9H3v6h3l5 4V5Z" /><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
+          </svg>
+        )}
+      </button>
 
       {speechActive && <div className="voice-activity-frame" aria-hidden="true" />}
       <div className="relative z-[1]">
