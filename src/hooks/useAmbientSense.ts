@@ -11,7 +11,7 @@ function vibrate(pattern: number[]): boolean {
 export function useAmbientSense() {
   const audioCtxRef = useRef<AudioContext | null>(null)
 
-  const primeHaptics = useCallback(() => vibrate([10]), [])
+  const primeHaptics = useCallback(() => vibrate([700]), [])
 
   const getCtx = useCallback(() => {
     if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {

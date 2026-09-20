@@ -1031,7 +1031,7 @@ export default function App() {
 
   return (
     <div
-      className="max-w-[430px] mx-auto bg-[#F7F7F5] min-h-screen relative overflow-x-hidden"
+      className="app-shell mx-auto bg-[#F7F7F5] min-h-screen relative overflow-x-hidden"
       style={{ boxShadow: '0 0 0 1px #D8D8D3' }}
     >
       <div className="ambient-field" aria-hidden="true">

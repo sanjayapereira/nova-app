@@ -23,6 +23,38 @@ body {
   color: #1C1F26;
 }
 
+.app-shell {
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  body {
+    background: #DDE5E8;
+  }
+
+  .app-shell {
+    width: min(1180px, calc(100% - 48px));
+    min-height: calc(100vh - 48px);
+    margin-top: 24px;
+    margin-bottom: 24px;
+    border-radius: 28px;
+    box-shadow: 0 18px 60px rgba(28, 31, 38, 0.14), 0 0 0 1px #D8D8D3;
+  }
+
+  .app-shell > .relative.z-\[1\] > .flex {
+    max-width: 860px;
+    margin-inline: auto;
+  }
+
+  .app-shell > .relative.z-\[1\] > .flex > .flex-1 {
+    padding-inline: 0;
+  }
+
+  .app-shell > .relative.z-\[1\] > .flex:first-child {
+    min-height: calc(100vh - 48px);
+  }
+}
+
 /* Tabular numerals for times */
 .tabular {
   font-variant-numeric: tabular-nums;

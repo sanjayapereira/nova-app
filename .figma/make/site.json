@@ -1,5 +1,6 @@
 {
-  "description": "Streamline your project management with an intuitive platform that enhances collaboration, task tracking, and productivity for teams of all sizes.",
+  "title": "NOVA | Journey planner",
+  "description": "NOVA plans calm, connected journeys across shuttle, train, air pod, and smart road.",
   "robots": {
     "index": false
   },
