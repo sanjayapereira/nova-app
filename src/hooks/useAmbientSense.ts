@@ -1,13 +1,17 @@
 import { useRef, useCallback } from 'react'
 
-function vibrate(pattern: number[]) {
-  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-    navigator.vibrate(pattern)
+function vibrate(pattern: number[]): boolean {
+  try {
+    return typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function' && navigator.vibrate(pattern)
+  } catch {
+    return false
   }
 }
 
 export function useAmbientSense() {
   const audioCtxRef = useRef<AudioContext | null>(null)
+
+  const primeHaptics = useCallback(() => vibrate([10]), [])
 
   const getCtx = useCallback(() => {
     if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
@@ -84,5 +88,5 @@ export function useAmbientSense() {
     vibrate([80, 60, 120, 60, 200])
   }, [playTone])
 
-  return { triggerApproaching, triggerBoard, triggerTransfer, triggerLegArrival, triggerDestination }
+  return { primeHaptics, triggerApproaching, triggerBoard, triggerTransfer, triggerLegArrival, triggerDestination }
 }

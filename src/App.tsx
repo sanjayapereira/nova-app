@@ -577,9 +577,14 @@ function AddStopsScreen({ trip, stops, onAdd, onRemove, onBack }: { trip: Trip; 
 
 // ─── Journey ────────────────────────────────────────────────────────────────
 
-function JourneyScreen({ trip, onNext, onAddStops, onBack }: { trip: Trip; onNext: () => void; onAddStops: () => void; onBack: () => void }) {
+function JourneyScreen({ trip, onNext, onAddStops, onBack }: { trip: Trip; onNext: (hapticsUnavailable: boolean) => void; onAddStops: () => void; onBack: () => void }) {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [whyOpen, setWhyOpen] = useState(false)
+  const { primeHaptics } = useAmbientSense()
+
+  const startJourney = () => {
+    onNext(!primeHaptics())
+  }
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -670,7 +675,7 @@ function JourneyScreen({ trip, onNext, onAddStops, onBack }: { trip: Trip; onNex
 
         <div className="flex justify-center mt-8">
           <button
-            onClick={onNext}
+            onClick={startJourney}
             className="bg-[#1E4D8C] text-white text-[17px] font-700 px-10 py-4 rounded-full min-h-[56px] hover:bg-[#163a6e] active:scale-[0.98] transition-all"
           >
             Start journey
@@ -686,7 +691,7 @@ function JourneyScreen({ trip, onNext, onAddStops, onBack }: { trip: Trip; onNex
 
 // ─── Tracking ───────────────────────────────────────────────────────────────
 
-function TrackingScreen({ trip, onBack, onCancel }: { trip: Trip; onBack: () => void; onCancel: () => void }) {
+function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: Trip; onBack: () => void; onCancel: () => void; hapticsUnavailable: boolean }) {
   const [mapView, setMapView] = useState(false)
   const [step, setStep] = useState(0)
   const [legProgress, setLegProgress] = useState(0) // 0→1 within each leg
@@ -784,6 +789,11 @@ function TrackingScreen({ trip, onBack, onCancel }: { trip: Trip; onBack: () => 
             <p className="text-[13px] text-[#3F6B4F] font-500">{trip.status}</p>
           </div>
         </div>
+        {hapticsUnavailable && (
+          <p className="text-[12px] text-[#C7791C] mt-3" role="status">
+            Vibration is unavailable in this browser. Try Android Chrome over HTTPS.
+          </p>
+        )}
       </div>
 
       {/* View toggle */}
@@ -1016,6 +1026,7 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>('home')
   const [tripId, setTripId] = useState<string>('local')
   const [addedStops, setAddedStops] = useState<AddedStop[]>([])
+  const [hapticsUnavailable, setHapticsUnavailable] = useState(false)
   const trip = withAddedStops(TRIPS[tripId], addedStops)
 
   return (
@@ -1042,7 +1053,7 @@ export default function App() {
           />
         )}
         {screen === 'journey' && (
-          <JourneyScreen trip={trip} onNext={() => setScreen('tracking')} onAddStops={() => setScreen('add-stops')} onBack={() => setScreen('home')} />
+          <JourneyScreen trip={trip} onNext={(unavailable) => { setHapticsUnavailable(unavailable); setScreen('tracking') }} onAddStops={() => setScreen('add-stops')} onBack={() => setScreen('home')} />
         )}
         {screen === 'add-stops' && (
           <AddStopsScreen
@@ -1054,7 +1065,7 @@ export default function App() {
           />
         )}
         {screen === 'tracking' && (
-          <TrackingScreen trip={trip} onBack={() => setScreen('journey')} onCancel={() => setScreen('home')} />
+          <TrackingScreen trip={trip} hapticsUnavailable={hapticsUnavailable} onBack={() => setScreen('journey')} onCancel={() => setScreen('home')} />
         )}
       </div>
     </div>
