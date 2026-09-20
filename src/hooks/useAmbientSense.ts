@@ -8,10 +8,35 @@ function vibrate(pattern: number[]): boolean {
   }
 }
 
+function speak(text: string) {
+  try {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.rate = 0.92
+    utterance.pitch = 1
+    window.speechSynthesis.speak(utterance)
+  } catch {
+    // Speech is optional and may be blocked by the browser.
+  }
+}
+
 export function useAmbientSense() {
   const audioCtxRef = useRef<AudioContext | null>(null)
 
   const primeHaptics = useCallback(() => vibrate([700]), [])
+
+  const announceGreeting = useCallback((name: string, greeting: string) => {
+    speak(`${greeting}, ${name}. Where are you headed?`)
+  }, [])
+
+  const announceJourneyStart = useCallback((instruction: string) => {
+    speak(`Your journey is starting. ${instruction}`)
+  }, [])
+
+  const announceLegArrival = useCallback((destination: string, nextAction: string) => {
+    speak(`${destination} has arrived. ${nextAction}`)
+  }, [])
 
   const getCtx = useCallback(() => {
     if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
@@ -88,5 +113,5 @@ export function useAmbientSense() {
     vibrate([80, 60, 120, 60, 200])
   }, [playTone])
 
-  return { primeHaptics, triggerApproaching, triggerBoard, triggerTransfer, triggerLegArrival, triggerDestination }
+  return { primeHaptics, announceGreeting, announceJourneyStart, announceLegArrival, triggerApproaching, triggerBoard, triggerTransfer, triggerLegArrival, triggerDestination }
 }

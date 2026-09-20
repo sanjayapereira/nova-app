@@ -290,6 +290,14 @@ function HomeScreen({ onSearch }: { onSearch: (query: string) => void }) {
   const recognitionRef = useRef<any>(null)
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
+  const { announceGreeting } = useAmbientSense()
+  const greetingAnnouncedRef = useRef(false)
+
+  useEffect(() => {
+    if (greetingAnnouncedRef.current) return
+    greetingAnnouncedRef.current = true
+    announceGreeting('Alex', greeting)
+  }, [announceGreeting, greeting])
 
   // Clean up if the screen unmounts mid-listen
   useEffect(() => {
@@ -699,7 +707,24 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
   const approachFiredRef = useRef(false)
   const legArrivalFiredRef = useRef(false)
 
-  const { triggerApproaching, triggerBoard, triggerLegArrival, triggerDestination } = useAmbientSense()
+  const { announceJourneyStart, announceLegArrival, triggerApproaching, triggerBoard, triggerLegArrival, triggerDestination } = useAmbientSense()
+  const spokenStepRef = useRef(-1)
+
+  const getWayfinding = (leg: Leg) => {
+    if (leg.type === 'shuttle') return { walk: `Walk to your shuttle pickup at ${leg.name}.`, next: 'Wait for your shuttle, then board when it arrives.' }
+    if (leg.type === 'train') return { walk: `Walk to ${leg.name}.`, next: 'Go to the platform and board the train.' }
+    if (leg.type === 'air') return { walk: `Walk to ${leg.name}.`, next: 'Go to the gate and board your air pod.' }
+    if (leg.type === 'road') return { walk: `Walk to ${leg.name}.`, next: 'Board your smart road pod when it arrives.' }
+    return { walk: `Continue toward ${leg.name}.`, next: 'Follow the route shown on screen.' }
+  }
+
+  useEffect(() => {
+    if (spokenStepRef.current === step) return
+    const activeLeg = trip.legs[step + 1]
+    if (!activeLeg) return
+    spokenStepRef.current = step
+    announceJourneyStart(getWayfinding(activeLeg).walk)
+  }, [step, trip.legs, announceJourneyStart])
 
   // Auto-simulate leg progress — counts from 0→1 over LEG_DURATION seconds
   useEffect(() => {
@@ -739,6 +764,10 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
       triggerLegArrival()
 
       const next = step + 1
+      const arrivedAt = trip.legs[next + 1]?.name ?? trip.destinationLabel
+      const nextLeg = trip.legs[next + 1]
+      const nextAction = nextLeg ? getWayfinding(nextLeg).walk : 'Enjoy your destination.'
+      announceLegArrival(arrivedAt, nextAction)
       const transitionTimer = setTimeout(() => {
         if (next >= trip.stepLabels.length) {
           setTimeout(() => {
@@ -756,7 +785,7 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
 
       return () => clearTimeout(transitionTimer)
     }
-  }, [legProgress, step, arrived, trip.stepLabels.length, triggerApproaching, triggerBoard, triggerLegArrival, triggerDestination])
+  }, [legProgress, step, arrived, trip.legs, trip.stepLabels.length, trip.destinationLabel, announceLegArrival, triggerApproaching, triggerBoard, triggerLegArrival, triggerDestination])
 
   // Derived values — dot size is fixed, only pulse speed changes with proximity:
   // far away it breathes slowly, close by it quickens, like a locating pulse.
@@ -764,8 +793,11 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
   const dotPx = 14
   const rippleDur = (3.4 - legProgress * 2.4).toFixed(2) // 3.4s far → 1.0s near
   const rippleCount = 2
-  const narrative = isApproaching ? trip.narrativesNear[step] : trip.narrativesFar[step]
-  const proximityLabel = legProgress < 0.35 ? 'Far away' : legProgress < 0.6 ? 'En route' : legProgress < 0.75 ? 'Getting close' : 'Almost there'
+  const activeLeg = trip.legs[step + 1]
+  const wayfinding = activeLeg ? getWayfinding(activeLeg) : { walk: 'Continue toward your destination.', next: 'Follow the route shown on screen.' }
+  const isWalking = legProgress < 0.25
+  const narrative = isWalking ? wayfinding.walk : isApproaching ? trip.narrativesNear[step] : trip.narrativesFar[step]
+  const proximityLabel = isWalking ? 'Walk to pickup' : legProgress < 0.6 ? 'En route' : legProgress < 0.75 ? 'Getting close' : 'Almost there'
 
   // Map dot interpolated along the actual route segment
   const ep = trip.legEndpoints[Math.min(step, trip.legEndpoints.length - 1)]
