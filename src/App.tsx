@@ -295,9 +295,17 @@ function HomeScreen({ onSearch }: { onSearch: (query: string) => void }) {
   const greetingAnnouncedRef = useRef(false)
 
   useEffect(() => {
-    if (greetingAnnouncedRef.current) return
-    greetingAnnouncedRef.current = true
-    announceGreeting('Alex', greeting)
+    const announce = () => {
+      if (greetingAnnouncedRef.current) return
+      greetingAnnouncedRef.current = true
+      announceGreeting('Alex', greeting)
+    }
+    const mobile = /android|iphone|ipad|mobile/i.test(navigator.userAgent)
+    if (mobile) {
+      window.addEventListener('pointerdown', announce, { once: true })
+      return () => window.removeEventListener('pointerdown', announce)
+    }
+    announce()
   }, [announceGreeting, greeting])
 
   // Clean up if the screen unmounts mid-listen
@@ -586,7 +594,7 @@ function AddStopsScreen({ trip, stops, onAdd, onRemove, onBack }: { trip: Trip; 
 
 // ─── Journey ────────────────────────────────────────────────────────────────
 
-function JourneyScreen({ trip, onNext, onAddStops, onBack }: { trip: Trip; onNext: (hapticsUnavailable: boolean) => void; onAddStops: () => void; onBack: () => void }) {
+function JourneyScreen({ trip, onNext, onVoiceReady, onAddStops, onBack }: { trip: Trip; onNext: (hapticsUnavailable: boolean) => void; onVoiceReady: () => void; onAddStops: () => void; onBack: () => void }) {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [whyOpen, setWhyOpen] = useState(false)
   const { primeHaptics, announceJourneyStart } = useAmbientSense()
@@ -594,7 +602,7 @@ function JourneyScreen({ trip, onNext, onAddStops, onBack }: { trip: Trip; onNex
   const startJourney = () => {
     const hapticsUnavailable = !primeHaptics()
     onNext(hapticsUnavailable)
-    announceJourneyStart('Stay at your location. Your autonomous shuttle will arrive shortly.')
+    announceJourneyStart('Stay at your location. Your autonomous shuttle will arrive shortly.', onVoiceReady)
   }
 
   return (
@@ -702,7 +710,7 @@ function JourneyScreen({ trip, onNext, onAddStops, onBack }: { trip: Trip; onNex
 
 // ─── Tracking ───────────────────────────────────────────────────────────────
 
-function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: Trip; onBack: () => void; onCancel: () => void; hapticsUnavailable: boolean }) {
+function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable, voiceReady }: { trip: Trip; onBack: () => void; onCancel: () => void; hapticsUnavailable: boolean; voiceReady: boolean }) {
   const [mapView, setMapView] = useState(false)
   const [step, setStep] = useState(0)
   const [phase, setPhase] = useState<JourneyPhase>('waiting')
@@ -724,7 +732,7 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
 
   // Auto-simulate leg progress — counts from 0→1 over LEG_DURATION seconds
   useEffect(() => {
-    if (arrived) return
+    if (arrived || !voiceReady) return
     const tick = 100 // ms
     if (phase === 'walking' && !walkingStarted) return
     if (phase === 'boarding') return
@@ -743,7 +751,7 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
     }, tick)
 
     return () => clearInterval(t)
-  }, [phase, walkingStarted, arrived])
+  }, [phase, walkingStarted, arrived, voiceReady])
 
   // Fire events based on progress within a leg
   useEffect(() => {
@@ -1114,6 +1122,7 @@ export default function App() {
   const [tripId, setTripId] = useState<string>('local')
   const [addedStops, setAddedStops] = useState<AddedStop[]>([])
   const [hapticsUnavailable, setHapticsUnavailable] = useState(false)
+  const [voiceReady, setVoiceReady] = useState(false)
   const [speechActive, setSpeechActive] = useState(false)
   const trip = withAddedStops(TRIPS[tripId], addedStops)
 
@@ -1149,6 +1158,7 @@ export default function App() {
         <span className="text-[11px] font-800 text-[#1C1F26]/25 tracking-[0.2em]">NOVA</span>
       </div>
 
+      {speechActive && <div className="voice-activity-frame" aria-hidden="true" />}
       <div className="relative z-[1]">
         {screen === 'home' && (
           <HomeScreen
@@ -1159,7 +1169,7 @@ export default function App() {
           />
         )}
         {screen === 'journey' && (
-          <JourneyScreen trip={trip} onNext={(unavailable) => { setHapticsUnavailable(unavailable); setScreen('tracking') }} onAddStops={() => setScreen('add-stops')} onBack={() => setScreen('home')} />
+          <JourneyScreen trip={trip} onNext={(unavailable) => { setVoiceReady(false); setHapticsUnavailable(unavailable); setScreen('tracking') }} onVoiceReady={() => setVoiceReady(true)} onAddStops={() => setScreen('add-stops')} onBack={() => setScreen('home')} />
         )}
         {screen === 'add-stops' && (
           <AddStopsScreen
@@ -1171,7 +1181,7 @@ export default function App() {
           />
         )}
         {screen === 'tracking' && (
-          <TrackingScreen trip={trip} hapticsUnavailable={hapticsUnavailable} onBack={() => setScreen('journey')} onCancel={() => setScreen('home')} />
+          <TrackingScreen trip={trip} voiceReady={voiceReady} hapticsUnavailable={hapticsUnavailable} onBack={() => setScreen('journey')} onCancel={() => setScreen('home')} />
         )}
       </div>
     </div>

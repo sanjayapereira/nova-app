@@ -1,6 +1,52 @@
 import { useRef, useCallback } from 'react'
 
 let speechSequence = 0
+let speechQueue: { text: string; onEnd?: () => void }[] = []
+let speechBusy = false
+
+function preferredVoice(): SpeechSynthesisVoice | undefined {
+  if (typeof navigator === 'undefined' || typeof window === 'undefined') return undefined
+  const voices = window.speechSynthesis.getVoices()
+  const englishVoices = voices.filter((voice) => voice.lang.toLowerCase().startsWith('en'))
+  const mobile = /android|iphone|ipad|mobile/i.test(navigator.userAgent)
+  const preferredNames = mobile
+    ? ['samantha', 'karen', 'susan', 'zira', 'jenny', 'google us english']
+    : ['david', 'mark', 'daniel', 'guy', 'alex', 'google uk english male']
+  return preferredNames.reduce<SpeechSynthesisVoice | undefined>((match, name) => match ?? englishVoices.find((voice) => voice.name.toLowerCase().includes(name)), undefined)
+    ?? englishVoices[0]
+    ?? voices[0]
+}
+
+function flushSpeechQueue() {
+  if (speechBusy || speechQueue.length === 0) return
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+    const job = speechQueue.shift()
+    job?.onEnd?.()
+    flushSpeechQueue()
+    return
+  }
+
+  const job = speechQueue.shift()!
+  speechBusy = true
+  const speechId = ++speechSequence
+  window.dispatchEvent(new CustomEvent('nova:speech-start', { detail: { speechId } }))
+  const utterance = new SpeechSynthesisUtterance(job.text)
+  utterance.rate = 0.92
+  utterance.pitch = 1
+  utterance.voice = preferredVoice() ?? null
+  let finished = false
+  const finish = () => {
+    if (finished) return
+    finished = true
+    speechBusy = false
+    window.dispatchEvent(new CustomEvent('nova:speech-end', { detail: { speechId } }))
+    job.onEnd?.()
+    window.setTimeout(flushSpeechQueue, 0)
+  }
+  utterance.onend = finish
+  utterance.onerror = finish
+  window.speechSynthesis.speak(utterance)
+}
 
 function vibrate(pattern: number[]): boolean {
   try {
@@ -16,22 +62,9 @@ function speak(text: string, onEnd?: () => void) {
       onEnd?.()
       return
     }
-    window.speechSynthesis.cancel()
-    const speechId = ++speechSequence
-    window.dispatchEvent(new CustomEvent('nova:speech-start', { detail: { speechId } }))
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.rate = 0.92
-    utterance.pitch = 1
-    const finish = () => {
-      window.dispatchEvent(new CustomEvent('nova:speech-end', { detail: { speechId } }))
-      onEnd?.()
-    }
-    utterance.onend = finish
-    utterance.onerror = finish
-    window.speechSynthesis.speak(utterance)
+    speechQueue.push({ text, onEnd })
+    flushSpeechQueue()
   } catch {
-    // Speech is optional and may be blocked by the browser.
-    window.dispatchEvent(new CustomEvent('nova:speech-end', { detail: { speechId: speechSequence } }))
     onEnd?.()
   }
 }
