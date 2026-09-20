@@ -314,9 +314,9 @@ button {
   position: absolute;
   inset: -7px;
   border-radius: 50%;
-  background: conic-gradient(from 0deg, rgba(255,255,255,0) 0deg, rgba(255,255,255,0.85) 35deg, rgba(255,255,255,0) 100deg, rgba(255,255,255,0) 360deg);
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
-          mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  border: 3px solid rgba(255,255,255,0.3);
+  border-top-color: rgba(255,255,255,0.95);
+  border-right-color: rgba(255,255,255,0.7);
   animation: scanSpin 2.6s linear infinite;
 }
 @keyframes scanSpin { to { transform: rotate(360deg); } }
