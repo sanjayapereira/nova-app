@@ -289,11 +289,10 @@ function HomeScreen({ onSearch }: { onSearch: (query: string) => void }) {
   const [listening, setListening] = useState(false)
   const [voiceNote, setVoiceNote] = useState<string | null>(null)
   const recognitionRef = useRef<any>(null)
+  const greetingAnnouncedRef = useRef(false)
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
   const { announceGreeting } = useAmbientSense()
-  const greetingAnnouncedRef = useRef(false)
-
   useEffect(() => {
     const announce = () => {
       if (greetingAnnouncedRef.current) return
@@ -302,8 +301,12 @@ function HomeScreen({ onSearch }: { onSearch: (query: string) => void }) {
     }
     const mobile = /android|iphone|ipad|mobile/i.test(navigator.userAgent)
     if (mobile) {
-      window.addEventListener('pointerdown', announce, { once: true })
-      return () => window.removeEventListener('pointerdown', announce)
+      window.addEventListener('pointerdown', announce)
+      window.addEventListener('touchstart', announce)
+      return () => {
+        window.removeEventListener('pointerdown', announce)
+        window.removeEventListener('touchstart', announce)
+      }
     }
     announce()
   }, [announceGreeting, greeting])
@@ -415,7 +418,7 @@ function HomeScreen({ onSearch }: { onSearch: (query: string) => void }) {
             onChange={(e) => setQuery(e.target.value)}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
-            className="flex-1 text-[18px] text-[#1C1F26] placeholder:text-[#1C1F26]/55 bg-transparent outline-none font-500"
+            className="destination-input flex-1 text-[18px] text-[#1C1F26] placeholder:text-[#1C1F26]/55 bg-transparent outline-none font-500"
           />
           {/* Voice button — tap to start, tap again to stop */}
           <button
@@ -725,6 +728,7 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable, voiceReady
   const [arrived, setArrived] = useState(false)
   const approachFiredRef = useRef(false)
   const legArrivalFiredRef = useRef(false)
+  const walkingOpeningRef = useRef(false)
 
   const { announceInstruction, announceLegArrival, triggerApproaching, triggerBoard, triggerLegArrival, triggerDestination } = useAmbientSense()
 
@@ -822,6 +826,15 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable, voiceReady
     }
   }, [legProgress, phase, walkingStarted, step, arrived, trip.legs, trip.stepLabels.length, trip.destinationLabel, announceInstruction, announceLegArrival, triggerApproaching, triggerBoard, triggerLegArrival, triggerDestination])
 
+  useEffect(() => {
+    if (phase !== 'walking' || !mapView || walkingStarted || walkingOpeningRef.current) return
+    walkingOpeningRef.current = true
+    announceInstruction('Walking path open. Follow the highlighted street route to the next stop.', () => {
+      walkingOpeningRef.current = false
+      setWalkingStarted(true)
+    })
+  }, [phase, mapView, walkingStarted, announceInstruction])
+
   // Derived values — dot size is fixed, only pulse speed changes with proximity:
   // far away it breathes slowly, close by it quickens, like a locating pulse.
   const isApproaching = legProgress >= 0.75
@@ -859,8 +872,13 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable, voiceReady
   const routePoints = trip.mapStops.map((stop, index) => index === step && step > 0 ? walkEnd : stop)
 
   const openWalkingPath = () => {
+    if (walkingStarted || walkingOpeningRef.current) return
+    walkingOpeningRef.current = true
     setMapView(true)
-    announceInstruction('Walking path open. Follow the highlighted street route to the next stop.', () => setWalkingStarted(true))
+    announceInstruction('Walking path open. Follow the highlighted street route to the next stop.', () => {
+      walkingOpeningRef.current = false
+      setWalkingStarted(true)
+    })
   }
 
   return (
@@ -1012,7 +1030,7 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable, voiceReady
       ) : (
         /* Map view — transport follows the route; walking uses its own street path. */
         <div className="flex-1 mx-6 mb-8 flex flex-col rounded-3xl overflow-hidden relative bg-[#EDEDEA]">
-          <button onClick={phase === 'walking' && !walkingStarted ? openWalkingPath : undefined} className={`relative flex-1 w-full min-h-[380px] text-left ${phase === 'walking' && !walkingStarted ? 'cursor-pointer' : ''}`} aria-label={phase === 'walking' && !walkingStarted ? 'Open walking path' : undefined}>
+          <div className="relative flex-1 w-full min-h-[380px]">
           <svg viewBox="0 0 340 520" className="w-full h-full" style={{ minHeight: 380 }}>
             <rect width="340" height="520" fill="#EDEDEA" />
             {/* Background road grid */}
@@ -1058,7 +1076,7 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable, voiceReady
             {phase === 'walking' && (
               <>
                 <line x1={walkStart.x} y1={walkStart.y} x2={walkEnd.x} y2={walkEnd.y} stroke="#C7791C" strokeWidth="5" strokeDasharray="9 7" strokeLinecap="round" opacity="0.75" />
-                {!walkingStarted && <text x={walkStart.x + 12} y={walkStart.y - 18} fontSize="11" fill="#C7791C" fontFamily="Plus Jakarta Sans, sans-serif" fontWeight="700">Click to open walking path</text>}
+                {!walkingStarted && !mapView && <text x={walkStart.x + 12} y={walkStart.y - 18} fontSize="11" fill="#C7791C" fontFamily="Plus Jakarta Sans, sans-serif" fontWeight="700">Open walking path from Journey view</text>}
               </>
             )}
 
@@ -1106,9 +1124,9 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable, voiceReady
               </text>
             ))}
           </svg>
-          </button>
+          </div>
 
-          <div className="shrink-0 bg-white/90 backdrop-blur px-4 py-3 border-t border-[#D8D8D3]">
+          <div className="map-status-banner shrink-0 backdrop-blur px-4 py-3 border-t">
             <p className="text-[13px] font-600 text-[#1C1F26]">{trip.stepLabels[step]} · {proximityLabel.toLowerCase()}</p>
             <p className="text-[12px] text-[#1C1F26]/50">Next stop · {trip.arrivals[step]}</p>
           </div>
