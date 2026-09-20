@@ -705,6 +705,7 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
   const [mapView, setMapView] = useState(false)
   const [step, setStep] = useState(0)
   const [phase, setPhase] = useState<JourneyPhase>('waiting')
+  const [walkingStarted, setWalkingStarted] = useState(false)
   const [legProgress, setLegProgress] = useState(0) // 0→1 within each leg
   const [arrived, setArrived] = useState(false)
   const approachFiredRef = useRef(false)
@@ -724,6 +725,7 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
   useEffect(() => {
     if (arrived) return
     const tick = 100 // ms
+    if (phase === 'walking' && !walkingStarted) return
     const phaseDuration = phase === 'waiting' ? 6 : phase === 'walking' ? 5 : phase === 'boarding' ? 3 : LEG_DURATION
     const increment = tick / (phaseDuration * 1000)
 
@@ -739,7 +741,7 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
     }, tick)
 
     return () => clearInterval(t)
-  }, [phase, arrived])
+  }, [phase, walkingStarted, arrived])
 
   // Fire events based on progress within a leg
   useEffect(() => {
@@ -768,7 +770,9 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
     }
 
     if (phase === 'walking') {
+      if (!walkingStarted) return
       setPhase('boarding')
+      setWalkingStarted(false)
       setLegProgress(0)
       announceInstruction(`You have reached ${trip.legs[step + 1]?.name ?? 'your stop'}. Board the next vehicle when it is ready.`)
       return
@@ -796,10 +800,10 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
         setStep(next)
         setPhase('walking')
         setLegProgress(0)
-        announceInstruction(`Walk to ${nextLeg?.name ?? 'the next stop'}. Follow the signs and information shown on screen.`)
+        announceInstruction(`Walk to ${nextLeg?.name ?? 'the next stop'}. Click the map to see the walking path, then follow the highlighted street route.`)
       }
     }
-  }, [legProgress, phase, step, arrived, trip.legs, trip.stepLabels.length, trip.destinationLabel, announceInstruction, announceLegArrival, triggerApproaching, triggerBoard, triggerLegArrival, triggerDestination])
+  }, [legProgress, phase, walkingStarted, step, arrived, trip.legs, trip.stepLabels.length, trip.destinationLabel, announceInstruction, announceLegArrival, triggerApproaching, triggerBoard, triggerLegArrival, triggerDestination])
 
   // Derived values — dot size is fixed, only pulse speed changes with proximity:
   // far away it breathes slowly, close by it quickens, like a locating pulse.
@@ -826,6 +830,16 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
   const ep = trip.legEndpoints[Math.min(step, trip.legEndpoints.length - 1)]
   const dotX = ep.start.x + (ep.end.x - ep.start.x) * legProgress
   const dotY = ep.start.y + (ep.end.y - ep.start.y) * legProgress
+  const walkStart = trip.mapStops[Math.min(step, trip.mapStops.length - 1)]
+  const walkEnd = { x: Math.min(walkStart.x + 42, 315), y: Math.max(walkStart.y - 30, 24) }
+  const mapDotX = phase === 'walking' ? walkStart.x + (walkEnd.x - walkStart.x) * legProgress : dotX
+  const mapDotY = phase === 'walking' ? walkStart.y + (walkEnd.y - walkStart.y) * legProgress : dotY
+
+  const openWalkingPath = () => {
+    setMapView(true)
+    setWalkingStarted(true)
+    announceInstruction('Walking path open. Follow the highlighted street route to the next stop.')
+  }
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -959,6 +973,11 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
                               style={{ width: `${legProgress * 100}%` }}
                             />
                           </div>
+                          {phase === 'walking' && !walkingStarted && (
+                            <button onClick={openWalkingPath} className="w-full mt-3 bg-white text-[#1E4D8C] rounded-full py-2.5 text-[13px] font-700">
+                              Open walking path
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -969,8 +988,9 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
           )}
         </div>
       ) : (
-        /* Map view — dot moves along route with legProgress */
+        /* Map view — transport follows the route; walking uses its own street path. */
         <div className="flex-1 mx-6 mb-8 rounded-3xl overflow-hidden relative bg-[#EDEDEA]">
+          <button onClick={phase === 'walking' && !walkingStarted ? openWalkingPath : undefined} className={`w-full h-full text-left ${phase === 'walking' && !walkingStarted ? 'cursor-pointer' : ''}`} aria-label={phase === 'walking' && !walkingStarted ? 'Open walking path' : undefined}>
           <svg viewBox="0 0 340 520" className="w-full h-full" style={{ minHeight: 380 }}>
             <rect width="340" height="520" fill="#EDEDEA" />
             {/* Background road grid */}
@@ -1003,17 +1023,26 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
             />
 
             {/* Active segment progress */}
-            <line
-              x1={ep.start.x} y1={ep.start.y}
-              x2={dotX} y2={dotY}
-              stroke="#1E4D8C"
-              strokeWidth="3"
-              strokeLinecap="round"
-            />
+            {phase !== 'walking' && (
+              <line
+                x1={ep.start.x} y1={ep.start.y}
+                x2={dotX} y2={dotY}
+                stroke="#1E4D8C"
+                strokeWidth="3"
+                strokeLinecap="round"
+              />
+            )}
+
+            {phase === 'walking' && (
+              <>
+                <line x1={walkStart.x} y1={walkStart.y} x2={walkEnd.x} y2={walkEnd.y} stroke="#C7791C" strokeWidth="5" strokeDasharray="9 7" strokeLinecap="round" opacity="0.75" />
+                {!walkingStarted && <text x={walkStart.x + 12} y={walkStart.y - 18} fontSize="11" fill="#C7791C" fontFamily="Plus Jakarta Sans, sans-serif" fontWeight="700">Click to open walking path</text>}
+              </>
+            )}
 
             {/* User dot — moves continuously */}
-            <circle cx={dotX} cy={dotY} r="7" fill="#1E4D8C" />
-            <circle cx={dotX} cy={dotY} r="7" fill="#1E4D8C" opacity="0.25">
+            <circle cx={mapDotX} cy={mapDotY} r="7" fill={phase === 'walking' ? '#C7791C' : '#1E4D8C'} />
+            <circle cx={mapDotX} cy={mapDotY} r="7" fill={phase === 'walking' ? '#C7791C' : '#1E4D8C'} opacity="0.25">
               <animate
                 attributeName="r"
                 values="7;18;7"
@@ -1027,7 +1056,7 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
                 repeatCount="indefinite"
               />
             </circle>
-            <text x={dotX + 10} y={dotY + 4} fontSize="11" fill="#1E4D8C" fontFamily="Plus Jakarta Sans, sans-serif" fontWeight="700">You</text>
+            <text x={mapDotX + 10} y={mapDotY + 4} fontSize="11" fill={phase === 'walking' ? '#C7791C' : '#1E4D8C'} fontFamily="Plus Jakarta Sans, sans-serif" fontWeight="700">You</text>
 
             {/* Stops */}
             {trip.mapStops.map(({ x, y, label, dest, anchor }) => (
@@ -1055,6 +1084,7 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
               </text>
             ))}
           </svg>
+          </button>
 
           <div className="absolute bottom-4 left-4 right-4 bg-white/90 backdrop-blur rounded-2xl px-4 py-3">
             <p className="text-[13px] font-600 text-[#1C1F26]">{trip.stepLabels[step]} · {proximityLabel.toLowerCase()}</p>

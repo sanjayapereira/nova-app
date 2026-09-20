@@ -8,16 +8,21 @@ function vibrate(pattern: number[]): boolean {
   }
 }
 
-function speak(text: string) {
+function speak(text: string, onEnd?: () => void) {
   try {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      onEnd?.()
+      return
+    }
     window.speechSynthesis.cancel()
     const utterance = new SpeechSynthesisUtterance(text)
     utterance.rate = 0.92
     utterance.pitch = 1
+    utterance.onend = () => onEnd?.()
     window.speechSynthesis.speak(utterance)
   } catch {
     // Speech is optional and may be blocked by the browser.
+    onEnd?.()
   }
 }
 
@@ -34,8 +39,8 @@ export function useAmbientSense() {
     speak(`Your journey is starting. ${instruction}`)
   }, [])
 
-  const announceInstruction = useCallback((instruction: string) => {
-    speak(instruction)
+  const announceInstruction = useCallback((instruction: string, onEnd?: () => void) => {
+    speak(instruction, onEnd)
   }, [])
 
   const announceLegArrival = useCallback((destination: string, nextAction: string) => {
