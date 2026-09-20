@@ -127,6 +127,13 @@ export function useAmbientSense() {
     }
   }, [])
 
+  const stopSpeech = useCallback(() => {
+    speechQueue = []
+    speechBusy = false
+    window.speechSynthesis?.cancel()
+    dispatchSpeechState(false)
+  }, [])
+
   const announceGreeting = useCallback((name: string, greeting: string) => {
     speak(`${greeting}, ${name}. Where are you headed?`)
   }, [])
@@ -218,5 +225,5 @@ export function useAmbientSense() {
     vibrate([80, 60, 120, 60, 200])
   }, [playTone])
 
-  return { primeHaptics, setSpeechMuted, announceGreeting, announceJourneyStart, announceInstruction, announceLegArrival, triggerApproaching, triggerBoard, triggerTransfer, triggerLegArrival, triggerDestination }
+  return { primeHaptics, setSpeechMuted, stopSpeech, announceGreeting, announceJourneyStart, announceInstruction, announceLegArrival, triggerApproaching, triggerBoard, triggerTransfer, triggerLegArrival, triggerDestination }
 }

@@ -17,6 +17,8 @@ type RideMode = 'shuttle' | 'train' | 'air' | 'road'
 type AddedStop = { id: string; name: string; mode: RideMode; reason: string; afterId: string }
 type JourneyPhase = 'waiting' | 'boarding' | 'riding' | 'walking'
 
+let greetingPlayedThisSession = false
+
 type Point = { x: number; y: number }
 type MapStop = { x: number; y: number; label: string; anchor: 'start' | 'end'; dest?: boolean }
 type SegmentLabel = { x: number; y: number; text: string }
@@ -295,8 +297,9 @@ function HomeScreen({ onSearch }: { onSearch: (query: string) => void }) {
   const { announceGreeting } = useAmbientSense()
   useEffect(() => {
     const announce = () => {
-      if (greetingAnnouncedRef.current) return
+      if (greetingAnnouncedRef.current || greetingPlayedThisSession) return
       greetingAnnouncedRef.current = true
+      greetingPlayedThisSession = true
       announceGreeting('Alex', greeting)
     }
     const mobile = /android|iphone|ipad|mobile/i.test(navigator.userAgent)
@@ -521,7 +524,7 @@ function AddStopsScreen({ trip, stops, onAdd, onRemove, onBack }: { trip: Trip; 
       <h1 className="text-[32px] leading-tight font-800 text-[#1C1F26] mb-2">Add a stop</h1>
       <p className="text-[14px] text-[#1C1F26]/60 leading-relaxed mb-8">NOVA will add your stops to every route and suggest the best way to reach each one.</p>
 
-      <div className="border-b-2 border-[#1E4D8C] pb-3 mb-5">
+      <div className="add-stop-input-shell pb-3 mb-5">
         <input
           value={draft}
           onChange={(event) => { setDraft(event.target.value); setSelectedMode(null) }}
@@ -543,15 +546,19 @@ function AddStopsScreen({ trip, stops, onAdd, onRemove, onBack }: { trip: Trip; 
       )}
 
       {draft.trim() && recommendationReady && (
-        <div className="bg-[#EDEDEA] rounded-2xl p-4 mb-6 animate-slide-up">
+        <>
+        <div className="suggested-mode-panel rounded-2xl p-4 mb-3 animate-slide-up">
           <p className="text-[11px] uppercase tracking-widest font-700 text-[#1C1F26]/45 mb-2">NOVA suggests</p>
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-9 h-9 rounded-full bg-[#1E4D8C] text-white flex items-center justify-center"><ModeGlyph type={chosenMode} /></div>
+            <div className="w-9 h-9 rounded-full bg-[#1E4D8C] text-white flex items-center justify-center"><ModeGlyph type={suggestion.mode} /></div>
             <div>
-              <p className="text-[16px] font-700 text-[#1C1F26]">{RIDE_MODE_LABELS[chosenMode]}</p>
-              <p className="text-[13px] text-[#1C1F26]/60">{selectedMode ? 'Your preferred option' : suggestion.reason}</p>
+              <p className="text-[16px] font-700 text-[#1C1F26]">{RIDE_MODE_LABELS[suggestion.mode]}</p>
+              <p className="text-[13px] text-[#1C1F26]/60">{suggestion.reason}</p>
             </div>
           </div>
+        </div>
+        <div className="available-modes-panel rounded-2xl p-4 mb-6 animate-slide-up">
+          <p className="text-[11px] uppercase tracking-widest font-700 text-[#1C1F26]/45 mb-2">Choose another option</p>
           <div className="flex flex-wrap gap-2 mt-4">
             {(Object.keys(RIDE_MODE_LABELS) as RideMode[]).map((mode) => (
               <button
@@ -573,8 +580,9 @@ function AddStopsScreen({ trip, stops, onAdd, onRemove, onBack }: { trip: Trip; 
               {insertionOptions.map((leg) => <option key={leg.id} value={leg.id}>{leg.name}</option>)}
             </select>
           </label>
-          <button onClick={addStop} className="w-full mt-4 bg-[#1E4D8C] text-white text-[15px] font-700 py-3 rounded-full">Add this stop</button>
+          <button onClick={addStop} className="w-full mt-4 bg-[#1E4D8C] text-white text-[15px] font-700 py-3 rounded-full">Add this stop via {RIDE_MODE_LABELS[chosenMode]}</button>
         </div>
+        </>
       )}
 
       <div className="mb-8">
@@ -1155,7 +1163,7 @@ export default function App() {
   const [voiceReady, setVoiceReady] = useState(false)
   const [speechActive, setSpeechActive] = useState(false)
   const [speechMuted, setSpeechMutedState] = useState(false)
-  const { setSpeechMuted } = useAmbientSense()
+  const { setSpeechMuted, stopSpeech } = useAmbientSense()
   const trip = withAddedStops(TRIPS[tripId], addedStops)
 
   useEffect(() => {
@@ -1170,6 +1178,12 @@ export default function App() {
     const nextMuted = !speechMuted
     setSpeechMutedState(nextMuted)
     setSpeechMuted(nextMuted)
+  }
+
+  const cancelJourney = () => {
+    stopSpeech()
+    setVoiceReady(false)
+    setScreen('home')
   }
 
   return (
@@ -1227,7 +1241,7 @@ export default function App() {
           />
         )}
         {screen === 'tracking' && (
-          <TrackingScreen trip={trip} voiceReady={voiceReady} hapticsUnavailable={hapticsUnavailable} onBack={() => setScreen('journey')} onCancel={() => setScreen('home')} />
+          <TrackingScreen trip={trip} voiceReady={voiceReady} hapticsUnavailable={hapticsUnavailable} onBack={() => setScreen('journey')} onCancel={cancelJourney} />
         )}
       </div>
     </div>
