@@ -56,6 +56,28 @@ body {
   animation: pulse-fast 1.1s ease-in-out infinite;
 }
 
+/* Calm system-thinking indicator: a slow staggered breath instead of quick pulses. */
+.thinking-pulse {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.thinking-pulse span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #1E4D8C;
+  opacity: 0.35;
+  animation: thinking-breathe 2.8s ease-in-out infinite;
+}
+.thinking-pulse span:nth-child(2) { animation-delay: 0.35s; }
+.thinking-pulse span:nth-child(3) { animation-delay: 0.7s; }
+@keyframes thinking-breathe {
+  0%, 100% { transform: scale(0.85); opacity: 0.3; }
+  50% { transform: scale(1.15); opacity: 0.8; }
+}
+
 /* Ripple ring */
 @keyframes ripple {
   0% { transform: scale(1); opacity: 0.4; }
@@ -78,6 +100,7 @@ body {
   .animate-pulse-slow,
   .animate-pulse-med,
   .animate-pulse-fast,
+  .thinking-pulse span,
   .animate-ripple,
   .animate-ripple-delay,
   .animate-slide-up,

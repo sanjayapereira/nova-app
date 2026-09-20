@@ -14,7 +14,7 @@ type Leg = {
 }
 
 type RideMode = 'shuttle' | 'train' | 'air' | 'road'
-type AddedStop = { id: string; name: string; mode: RideMode; reason: string }
+type AddedStop = { id: string; name: string; mode: RideMode; reason: string; afterId: string }
 
 type Point = { x: number; y: number }
 type MapStop = { x: number; y: number; label: string; anchor: 'start' | 'end'; dest?: boolean }
@@ -165,43 +165,80 @@ function suggestTransport(stopName: string): { mode: RideMode; reason: string } 
 function withAddedStops(trip: Trip, addedStops: AddedStop[]): Trip {
   if (!addedStops.length) return trip
 
-  const destination = trip.legs[trip.legs.length - 1]
   const finalArrival = trip.arrivals[trip.arrivals.length - 1]
-  const customLegs: Leg[] = addedStops.map((stop) => ({
-    id: `added-${stop.id}`,
-    type: stop.mode,
-    name: stop.name,
-    sub: `${RIDE_MODE_LABELS[stop.mode]} · added stop`,
-    time: finalArrival,
-    detail: stop.reason,
-    delayed: false,
-  }))
-  const mapDestination = trip.mapStops[trip.mapStops.length - 1]
-  const previousStop = trip.mapStops[trip.mapStops.length - 2]
-  const customMapStops: MapStop[] = addedStops.map((stop, index) => {
-    const progress = (index + 1) / (addedStops.length + 1)
-    return {
-      x: previousStop.x + (mapDestination.x - previousStop.x) * progress,
-      y: previousStop.y + (mapDestination.y - previousStop.y) * progress,
-      label: stop.name,
-      anchor: 'end',
-    }
+  const addedByAfter = new Map<string, AddedStop[]>()
+  for (const stop of addedStops) {
+    const stopsAtPosition = addedByAfter.get(stop.afterId) ?? []
+    stopsAtPosition.push(stop)
+    addedByAfter.set(stop.afterId, stopsAtPosition)
+  }
+
+  const legs: Leg[] = []
+  const mapStops: MapStop[] = []
+  const customStopIds = new Set(addedStops.map((stop) => `added-${stop.id}`))
+
+  trip.legs.slice(0, -1).forEach((leg, index) => {
+    legs.push(leg)
+    mapStops.push(trip.mapStops[index])
+    const stopsAtPosition = addedByAfter.get(leg.id) ?? []
+    const start = trip.mapStops[index]
+    const end = trip.mapStops[index + 1]
+    stopsAtPosition.forEach((stop, stopIndex) => {
+      const progress = (stopIndex + 1) / (stopsAtPosition.length + 1)
+      legs.push({
+        id: `added-${stop.id}`,
+        type: stop.mode,
+        name: stop.name,
+        sub: `${RIDE_MODE_LABELS[stop.mode]} · added stop`,
+        time: finalArrival,
+        detail: stop.reason,
+        delayed: false,
+      })
+      mapStops.push({
+        x: start.x + (end.x - start.x) * progress,
+        y: start.y + (end.y - start.y) * progress,
+        label: stop.name,
+        anchor: 'end',
+      })
+    })
   })
-  const mapStops = [...trip.mapStops.slice(0, -1), ...customMapStops, mapDestination]
+  legs.push(trip.legs[trip.legs.length - 1])
+  mapStops.push(trip.mapStops[trip.mapStops.length - 1])
+
+  const stepLabels: string[] = []
+  const narrativesFar: string[] = []
+  const narrativesNear: string[] = []
+  const arrivals: string[] = []
+  legs.slice(1, -1).forEach((leg) => {
+    if (customStopIds.has(leg.id)) {
+      const stop = addedStops.find((candidate) => `added-${candidate.id}` === leg.id)
+      stepLabels.push(RIDE_MODE_LABELS[leg.type as RideMode])
+      narrativesFar.push(`Routing you to ${leg.name}.`)
+      narrativesNear.push(`${leg.name} is coming up. Get ready.`)
+      arrivals.push(finalArrival)
+      if (stop) return
+    }
+    const baseIndex = trip.legs.findIndex((baseLeg) => baseLeg.id === leg.id) - 1
+    stepLabels.push(trip.stepLabels[baseIndex])
+    narrativesFar.push(trip.narrativesFar[baseIndex])
+    narrativesNear.push(trip.narrativesNear[baseIndex])
+    arrivals.push(trip.arrivals[baseIndex])
+  })
 
   return {
     ...trip,
-    legs: [...trip.legs.slice(0, -1), ...customLegs, destination],
-    stepLabels: [...trip.stepLabels, ...addedStops.map((stop) => RIDE_MODE_LABELS[stop.mode])],
-    narrativesFar: [...trip.narrativesFar, ...addedStops.map((stop) => `Routing you to ${stop.name}.`)],
-    narrativesNear: [...trip.narrativesNear, ...addedStops.map((stop) => `${stop.name} is coming up. Get ready.`)],
-    arrivals: [...trip.arrivals.slice(0, -1), ...addedStops.map(() => finalArrival), finalArrival],
+    legs,
+    stepLabels,
+    narrativesFar,
+    narrativesNear,
+    arrivals,
     legEndpoints: mapStops.slice(0, -1).map((start, index) => ({ start: { x: start.x, y: start.y }, end: { x: mapStops[index + 1].x, y: mapStops[index + 1].y } })),
     mapStops,
-    segmentLabels: [
-      ...trip.segmentLabels,
-      ...customMapStops.map((stop, index) => ({ x: stop.x - 24, y: stop.y - 12, text: RIDE_MODE_LABELS[addedStops[index].mode].toLowerCase() })),
-    ],
+    segmentLabels: legs.slice(1, -1).map((leg, index) => ({
+      x: (mapStops[index].x + mapStops[index + 1].x) / 2,
+      y: (mapStops[index].y + mapStops[index + 1].y) / 2,
+      text: RIDE_MODE_LABELS[leg.type as RideMode].toLowerCase(),
+    })),
     whyThisRoute: `${trip.whyThisRoute} Added stops: ${addedStops.map((stop) => `${stop.name} via ${RIDE_MODE_LABELS[stop.mode]}`).join(', ')}.`,
   }
 }
@@ -418,16 +455,35 @@ function HomeScreen({ onSearch }: { onSearch: (query: string) => void }) {
 
 // ─── Add stops ──────────────────────────────────────────────────────────────
 
-function AddStopsScreen({ stops, onAdd, onRemove, onBack }: { stops: AddedStop[]; onAdd: (stop: AddedStop) => void; onRemove: (id: string) => void; onBack: () => void }) {
+function AddStopsScreen({ trip, stops, onAdd, onRemove, onBack }: { trip: Trip; stops: AddedStop[]; onAdd: (stop: AddedStop) => void; onRemove: (id: string) => void; onBack: () => void }) {
   const [draft, setDraft] = useState('')
   const [selectedMode, setSelectedMode] = useState<RideMode | null>(null)
+  const insertionOptions = trip.legs.slice(0, -1)
+  const [selectedAfterId, setSelectedAfterId] = useState(insertionOptions[insertionOptions.length - 1]?.id ?? 'start')
+  const [isThinking, setIsThinking] = useState(false)
+  const [recommendationReady, setRecommendationReady] = useState(false)
   const suggestion = suggestTransport(draft)
   const chosenMode = selectedMode ?? suggestion.mode
 
+  useEffect(() => {
+    if (!draft.trim()) {
+      setIsThinking(false)
+      setRecommendationReady(false)
+      return
+    }
+    setIsThinking(true)
+    setRecommendationReady(false)
+    const timer = setTimeout(() => {
+      setIsThinking(false)
+      setRecommendationReady(true)
+    }, 1200)
+    return () => clearTimeout(timer)
+  }, [draft])
+
   const addStop = () => {
     const name = draft.trim()
-    if (!name) return
-    onAdd({ id: `${Date.now()}-${name}`, name, mode: chosenMode, reason: selectedMode ? `You chose ${RIDE_MODE_LABELS[chosenMode]} for this stop.` : suggestion.reason })
+    if (!name || !recommendationReady) return
+    onAdd({ id: `${Date.now()}-${name}`, name, mode: chosenMode, afterId: selectedAfterId, reason: selectedMode ? `You chose ${RIDE_MODE_LABELS[chosenMode]} for this stop.` : suggestion.reason })
     setDraft('')
     setSelectedMode(null)
   }
@@ -450,7 +506,17 @@ function AddStopsScreen({ stops, onAdd, onRemove, onBack }: { stops: AddedStop[]
         />
       </div>
 
-      {draft.trim() && (
+      {draft.trim() && isThinking && (
+        <div className="bg-[#EDEDEA] rounded-2xl p-5 mb-6 flex items-center gap-3 animate-slide-up" aria-live="polite">
+          <span className="thinking-pulse" aria-hidden="true"><span /><span /><span /></span>
+          <div>
+            <p className="text-[15px] font-700 text-[#1C1F26]">Finding the best connection</p>
+            <p className="text-[13px] text-[#1C1F26]/55">Checking time, distance, and live route conditions</p>
+          </div>
+        </div>
+      )}
+
+      {draft.trim() && recommendationReady && (
         <div className="bg-[#EDEDEA] rounded-2xl p-4 mb-6 animate-slide-up">
           <p className="text-[11px] uppercase tracking-widest font-700 text-[#1C1F26]/45 mb-2">NOVA suggests</p>
           <div className="flex items-center gap-3 mb-2">
@@ -471,6 +537,16 @@ function AddStopsScreen({ stops, onAdd, onRemove, onBack }: { stops: AddedStop[]
               </button>
             ))}
           </div>
+          <label className="block mt-4">
+            <span className="text-[11px] uppercase tracking-widest font-700 text-[#1C1F26]/45">Add this stop after</span>
+            <select
+              value={selectedAfterId}
+              onChange={(event) => setSelectedAfterId(event.target.value)}
+              className="w-full mt-2 bg-white border border-[#D8D8D3] rounded-xl px-3 py-3 text-[14px] text-[#1C1F26] outline-none"
+            >
+              {insertionOptions.map((leg) => <option key={leg.id} value={leg.id}>{leg.name}</option>)}
+            </select>
+          </label>
           <button onClick={addStop} className="w-full mt-4 bg-[#1E4D8C] text-white text-[15px] font-700 py-3 rounded-full">Add this stop</button>
         </div>
       )}
@@ -478,7 +554,7 @@ function AddStopsScreen({ stops, onAdd, onRemove, onBack }: { stops: AddedStop[]
       <div className="mb-8">
         <div className="flex items-center justify-between mb-3">
           <p className="text-[12px] text-[#1C1F26]/60 uppercase tracking-widest font-600">Your added stops</p>
-          <p className="text-[12px] text-[#1C1F26]/45">All routes</p>
+          <p className="text-[12px] text-[#1C1F26]/45">{stops.length} saved · all routes</p>
         </div>
         {stops.length === 0 ? (
           <p className="text-[14px] text-[#1C1F26]/45 border-b border-[#D8D8D3] pb-4">No extra stops yet.</p>
@@ -487,7 +563,7 @@ function AddStopsScreen({ stops, onAdd, onRemove, onBack }: { stops: AddedStop[]
             <div className="w-8 h-8 rounded-full bg-[#1E4D8C] text-white flex items-center justify-center flex-shrink-0"><ModeGlyph type={stop.mode} /></div>
             <div className="flex-1 min-w-0">
               <p className="text-[15px] font-700 text-[#1C1F26] truncate">{stop.name}</p>
-              <p className="text-[12px] text-[#1C1F26]/55">{RIDE_MODE_LABELS[stop.mode]} · {stop.reason}</p>
+              <p className="text-[12px] text-[#1C1F26]/55">{RIDE_MODE_LABELS[stop.mode]} · after {insertionOptions.find((leg) => leg.id === stop.afterId)?.name ?? 'your current route'}</p>
             </div>
             <button onClick={() => onRemove(stop.id)} aria-label={`Remove ${stop.name}`} className="text-[#B94A48] text-[13px] font-700">Remove</button>
           </div>
@@ -970,6 +1046,7 @@ export default function App() {
         )}
         {screen === 'add-stops' && (
           <AddStopsScreen
+            trip={TRIPS[tripId]}
             stops={addedStops}
             onAdd={(stop) => setAddedStops((current) => [...current, stop])}
             onRemove={(id) => setAddedStops((current) => current.filter((stop) => stop.id !== id))}
