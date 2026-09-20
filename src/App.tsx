@@ -1118,8 +1118,15 @@ export default function App() {
   const trip = withAddedStops(TRIPS[tripId], addedStops)
 
   useEffect(() => {
-    const onSpeechStart = () => setSpeechActive(true)
-    const onSpeechEnd = () => setSpeechActive(false)
+    let activeSpeechId = 0
+    const onSpeechStart = (event: Event) => {
+      activeSpeechId = (event as CustomEvent<{ speechId: number }>).detail.speechId
+      setSpeechActive(true)
+    }
+    const onSpeechEnd = (event: Event) => {
+      const speechId = (event as CustomEvent<{ speechId: number }>).detail.speechId
+      if (speechId === activeSpeechId) setSpeechActive(false)
+    }
     window.addEventListener('nova:speech-start', onSpeechStart)
     window.addEventListener('nova:speech-end', onSpeechEnd)
     return () => {

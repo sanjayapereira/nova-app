@@ -1,5 +1,7 @@
 import { useRef, useCallback } from 'react'
 
+let speechSequence = 0
+
 function vibrate(pattern: number[]): boolean {
   try {
     return typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function' && navigator.vibrate(pattern)
@@ -15,12 +17,13 @@ function speak(text: string, onEnd?: () => void) {
       return
     }
     window.speechSynthesis.cancel()
-    window.dispatchEvent(new CustomEvent('nova:speech-start'))
+    const speechId = ++speechSequence
+    window.dispatchEvent(new CustomEvent('nova:speech-start', { detail: { speechId } }))
     const utterance = new SpeechSynthesisUtterance(text)
     utterance.rate = 0.92
     utterance.pitch = 1
     const finish = () => {
-      window.dispatchEvent(new CustomEvent('nova:speech-end'))
+      window.dispatchEvent(new CustomEvent('nova:speech-end', { detail: { speechId } }))
       onEnd?.()
     }
     utterance.onend = finish
@@ -28,7 +31,7 @@ function speak(text: string, onEnd?: () => void) {
     window.speechSynthesis.speak(utterance)
   } catch {
     // Speech is optional and may be blocked by the browser.
-    window.dispatchEvent(new CustomEvent('nova:speech-end'))
+    window.dispatchEvent(new CustomEvent('nova:speech-end', { detail: { speechId: speechSequence } }))
     onEnd?.()
   }
 }
