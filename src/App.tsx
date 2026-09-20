@@ -237,11 +237,16 @@ function withAddedStops(trip: Trip, addedStops: AddedStop[]): Trip {
     arrivals,
     legEndpoints: mapStops.slice(0, -1).map((start, index) => ({ start: { x: start.x, y: start.y }, end: { x: mapStops[index + 1].x, y: mapStops[index + 1].y } })),
     mapStops,
-    segmentLabels: legs.slice(1, -1).map((leg, index) => ({
-      x: (mapStops[index].x + mapStops[index + 1].x) / 2,
-      y: (mapStops[index].y + mapStops[index + 1].y) / 2,
-      text: RIDE_MODE_LABELS[leg.type as RideMode].toLowerCase(),
-    })),
+    segmentLabels: legs.slice(1, -1).map((leg, index) => {
+      const start = mapStops[index]
+      const end = mapStops[index + 1]
+      if (!start || !end) return null
+      return {
+        x: (start.x + end.x) / 2,
+        y: (start.y + end.y) / 2,
+        text: RIDE_MODE_LABELS[leg.type as RideMode]?.toLowerCase() ?? 'route',
+      }
+    }).filter((label): label is SegmentLabel => label !== null),
     whyThisRoute: `${trip.whyThisRoute} Added stops: ${addedStops.map((stop) => `${stop.name} via ${RIDE_MODE_LABELS[stop.mode]}`).join(', ')}.`,
   }
 }
@@ -511,10 +516,25 @@ function AddStopsScreen({ trip, stops, onAdd, onRemove, onBack }: { trip: Trip; 
 
   const addStop = () => {
     const name = draft.trim()
-    if (!name || !recommendationReady) return
-    onAdd({ id: `${Date.now()}-${name}`, name, mode: chosenMode, afterId: selectedAfterId, reason: selectedMode ? `You chose ${RIDE_MODE_LABELS[chosenMode]} for this stop.` : suggestion.reason })
+
+    if (!name) return
+    if (!recommendationReady) return
+
+    const stop: AddedStop = {
+      id: `${Date.now()}-${name}`,
+      name,
+      mode: chosenMode,
+      afterId: selectedAfterId,
+      reason: selectedMode
+        ? `You chose ${RIDE_MODE_LABELS[chosenMode]} for this stop.`
+        : suggestion.reason,
+    }
+
+    onAdd(stop)
+
     setDraft('')
     setSelectedMode(null)
+    setRecommendationReady(false)
   }
 
   return (
@@ -580,7 +600,13 @@ function AddStopsScreen({ trip, stops, onAdd, onRemove, onBack }: { trip: Trip; 
               {insertionOptions.map((leg) => <option key={leg.id} value={leg.id}>{leg.name}</option>)}
             </select>
           </label>
-          <button onClick={addStop} className="w-full mt-4 bg-[#1E4D8C] text-white text-[15px] font-700 py-3 rounded-full">Add this stop via {RIDE_MODE_LABELS[chosenMode]}</button>
+          <button
+            type="button"
+            onClick={addStop}
+            className="w-full mt-4 bg-[#1E4D8C] text-white text-[15px] font-700 py-3 rounded-full"
+          >
+            Add this stop via {RIDE_MODE_LABELS[chosenMode]}
+          </button>
         </div>
         </>
       )}
