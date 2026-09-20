@@ -1154,22 +1154,15 @@ export default function App() {
   const [hapticsUnavailable, setHapticsUnavailable] = useState(false)
   const [voiceReady, setVoiceReady] = useState(false)
   const [speechActive, setSpeechActive] = useState(false)
-  const [speechPulse, setSpeechPulse] = useState(false)
   const [speechMuted, setSpeechMutedState] = useState(false)
   const { setSpeechMuted } = useAmbientSense()
   const trip = withAddedStops(TRIPS[tripId], addedStops)
 
   useEffect(() => {
     const onSpeechState = (event: Event) => setSpeechActive((event as CustomEvent<{ active: boolean }>).detail.active)
-    const onSpeechPulse = () => {
-      setSpeechPulse(true)
-      window.setTimeout(() => setSpeechPulse(false), 180)
-    }
     window.addEventListener('nova:speech-state', onSpeechState)
-    window.addEventListener('nova:speech-pulse', onSpeechPulse)
     return () => {
       window.removeEventListener('nova:speech-state', onSpeechState)
-      window.removeEventListener('nova:speech-pulse', onSpeechPulse)
     }
   }, [])
 
@@ -1211,7 +1204,7 @@ export default function App() {
         )}
       </button>
 
-      {speechActive && <div className={`voice-activity-frame ${speechPulse ? 'voice-activity-frame-pulse' : ''}`} aria-hidden="true" />}
+      <div className="voice-activity-frame" aria-hidden="true" />
       <div className="relative z-[1]">
         {screen === 'home' && (
           <HomeScreen

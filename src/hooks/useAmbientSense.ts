@@ -6,7 +6,18 @@ let speechBusy = false
 let speechMuted = false
 
 function dispatchSpeechState(active: boolean) {
+  if (typeof document !== 'undefined') {
+    document.documentElement.toggleAttribute('data-nova-speaking', active)
+    document.documentElement.style.setProperty('--nova-voice-opacity', active ? '0.9' : '0')
+  }
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('nova:speech-state', { detail: { active } }))
+}
+
+function dispatchSpeechPulse() {
+  if (typeof document !== 'undefined') {
+    document.documentElement.style.setProperty('--nova-voice-opacity', '1')
+    window.setTimeout(() => document.documentElement.style.setProperty('--nova-voice-opacity', '0.9'), 220)
+  }
 }
 
 function preferredVoice(): SpeechSynthesisVoice | undefined {
@@ -46,7 +57,10 @@ function flushSpeechQueue() {
   let finished = false
   let fallbackTimer: number | undefined
   const pulseTimer = window.setInterval(() => {
-    if (!finished) window.dispatchEvent(new CustomEvent('nova:speech-pulse', { detail: { speechId } }))
+    if (!finished) {
+      dispatchSpeechPulse()
+      window.dispatchEvent(new CustomEvent('nova:speech-pulse', { detail: { speechId } }))
+    }
   }, 420)
   const finish = () => {
     if (finished) return
@@ -63,7 +77,10 @@ function flushSpeechQueue() {
   }
   utterance.onend = finish
   utterance.onerror = finish
-  utterance.onboundary = () => window.dispatchEvent(new CustomEvent('nova:speech-pulse', { detail: { speechId } }))
+  utterance.onboundary = () => {
+    dispatchSpeechPulse()
+    window.dispatchEvent(new CustomEvent('nova:speech-pulse', { detail: { speechId } }))
+  }
   window.speechSynthesis.speak(utterance)
   // Some Android voices do not reliably emit onend. Keep UI and phase state
   // from getting stuck if that happens.
