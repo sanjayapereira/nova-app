@@ -34,6 +34,10 @@ export function useAmbientSense() {
     speak(`Your journey is starting. ${instruction}`)
   }, [])
 
+  const announceInstruction = useCallback((instruction: string) => {
+    speak(instruction)
+  }, [])
+
   const announceLegArrival = useCallback((destination: string, nextAction: string) => {
     speak(`${destination} has arrived. ${nextAction}`)
   }, [])
@@ -113,5 +117,5 @@ export function useAmbientSense() {
     vibrate([80, 60, 120, 60, 200])
   }, [playTone])
 
-  return { primeHaptics, announceGreeting, announceJourneyStart, announceLegArrival, triggerApproaching, triggerBoard, triggerTransfer, triggerLegArrival, triggerDestination }
+  return { primeHaptics, announceGreeting, announceJourneyStart, announceInstruction, announceLegArrival, triggerApproaching, triggerBoard, triggerTransfer, triggerLegArrival, triggerDestination }
 }

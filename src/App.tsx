@@ -15,6 +15,7 @@ type Leg = {
 
 type RideMode = 'shuttle' | 'train' | 'air' | 'road'
 type AddedStop = { id: string; name: string; mode: RideMode; reason: string; afterId: string }
+type JourneyPhase = 'waiting' | 'boarding' | 'riding' | 'walking'
 
 type Point = { x: number; y: number }
 type MapStop = { x: number; y: number; label: string; anchor: 'start' | 'end'; dest?: boolean }
@@ -588,9 +589,10 @@ function AddStopsScreen({ trip, stops, onAdd, onRemove, onBack }: { trip: Trip; 
 function JourneyScreen({ trip, onNext, onAddStops, onBack }: { trip: Trip; onNext: (hapticsUnavailable: boolean) => void; onAddStops: () => void; onBack: () => void }) {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [whyOpen, setWhyOpen] = useState(false)
-  const { primeHaptics } = useAmbientSense()
+  const { primeHaptics, announceJourneyStart } = useAmbientSense()
 
   const startJourney = () => {
+    announceJourneyStart('Stay at your location. Your autonomous shuttle will arrive shortly.')
     onNext(!primeHaptics())
   }
 
@@ -702,13 +704,13 @@ function JourneyScreen({ trip, onNext, onAddStops, onBack }: { trip: Trip; onNex
 function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: Trip; onBack: () => void; onCancel: () => void; hapticsUnavailable: boolean }) {
   const [mapView, setMapView] = useState(false)
   const [step, setStep] = useState(0)
+  const [phase, setPhase] = useState<JourneyPhase>('waiting')
   const [legProgress, setLegProgress] = useState(0) // 0→1 within each leg
   const [arrived, setArrived] = useState(false)
   const approachFiredRef = useRef(false)
   const legArrivalFiredRef = useRef(false)
 
-  const { announceJourneyStart, announceLegArrival, triggerApproaching, triggerBoard, triggerLegArrival, triggerDestination } = useAmbientSense()
-  const spokenStepRef = useRef(-1)
+  const { announceInstruction, announceLegArrival, triggerApproaching, triggerBoard, triggerLegArrival, triggerDestination } = useAmbientSense()
 
   const getWayfinding = (leg: Leg) => {
     if (leg.type === 'shuttle') return { walk: `Walk to your shuttle pickup at ${leg.name}.`, next: 'Wait for your shuttle, then board when it arrives.' }
@@ -718,19 +720,12 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
     return { walk: `Continue toward ${leg.name}.`, next: 'Follow the route shown on screen.' }
   }
 
-  useEffect(() => {
-    if (spokenStepRef.current === step) return
-    const activeLeg = trip.legs[step + 1]
-    if (!activeLeg) return
-    spokenStepRef.current = step
-    announceJourneyStart(getWayfinding(activeLeg).walk)
-  }, [step, trip.legs, announceJourneyStart])
-
   // Auto-simulate leg progress — counts from 0→1 over LEG_DURATION seconds
   useEffect(() => {
     if (arrived) return
     const tick = 100 // ms
-    const increment = tick / (LEG_DURATION * 1000)
+    const phaseDuration = phase === 'waiting' ? 6 : phase === 'walking' ? 5 : phase === 'boarding' ? 3 : LEG_DURATION
+    const increment = tick / (phaseDuration * 1000)
 
     const t = setInterval(() => {
       setLegProgress((p) => {
@@ -744,21 +739,42 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
     }, tick)
 
     return () => clearInterval(t)
-  }, [step, arrived])
+  }, [phase, arrived])
 
   // Fire events based on progress within a leg
   useEffect(() => {
     if (arrived) return
 
-    // Approaching threshold — fire once per leg
-    if (legProgress >= 0.75 && !approachFiredRef.current) {
+    // Approaching threshold applies only while riding a vehicle.
+    if (phase === 'riding' && legProgress >= 0.75 && !approachFiredRef.current) {
       approachFiredRef.current = true
       triggerApproaching()
     }
 
-    // Fire once at the arrival edge. The ref also prevents duplicate cues
-    // during React Strict Mode or while the transition timer is pending.
-    if (legProgress >= 1) {
+    if (legProgress < 1) return
+
+    if (phase === 'waiting') {
+      setPhase('boarding')
+      setLegProgress(0)
+      announceInstruction('Your shuttle is here. Board through the nearest door.')
+      return
+    }
+
+    if (phase === 'boarding') {
+      setPhase('riding')
+      setLegProgress(0)
+      triggerBoard()
+      return
+    }
+
+    if (phase === 'walking') {
+      setPhase('boarding')
+      setLegProgress(0)
+      announceInstruction(`You have reached ${trip.legs[step + 1]?.name ?? 'your stop'}. Board the next vehicle when it is ready.`)
+      return
+    }
+
+    if (phase === 'riding') {
       if (legArrivalFiredRef.current) return
       legArrivalFiredRef.current = true
       triggerLegArrival()
@@ -766,26 +782,24 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
       const next = step + 1
       const arrivedAt = trip.legs[next + 1]?.name ?? trip.destinationLabel
       const nextLeg = trip.legs[next + 1]
-      const nextAction = nextLeg ? getWayfinding(nextLeg).walk : 'Enjoy your destination.'
+      const nextAction = nextLeg ? `Exit here and walk to ${nextLeg.name}.` : 'Enjoy your destination.'
       announceLegArrival(arrivedAt, nextAction)
-      const transitionTimer = setTimeout(() => {
-        if (next >= trip.stepLabels.length) {
-          setTimeout(() => {
-            setArrived(true)
-            triggerDestination()
-          }, 350)
-        } else {
-          approachFiredRef.current = false
-          legArrivalFiredRef.current = false
-          setStep(next)
-          setLegProgress(0)
-          triggerBoard()
-        }
-      }, 500)
 
-      return () => clearTimeout(transitionTimer)
+      if (next >= trip.stepLabels.length) {
+        setTimeout(() => {
+          setArrived(true)
+          triggerDestination()
+        }, 350)
+      } else {
+        approachFiredRef.current = false
+        legArrivalFiredRef.current = false
+        setStep(next)
+        setPhase('walking')
+        setLegProgress(0)
+        announceInstruction(`Walk to ${nextLeg?.name ?? 'the next stop'}. Follow the signs and information shown on screen.`)
+      }
     }
-  }, [legProgress, step, arrived, trip.legs, trip.stepLabels.length, trip.destinationLabel, announceLegArrival, triggerApproaching, triggerBoard, triggerLegArrival, triggerDestination])
+  }, [legProgress, phase, step, arrived, trip.legs, trip.stepLabels.length, trip.destinationLabel, announceInstruction, announceLegArrival, triggerApproaching, triggerBoard, triggerLegArrival, triggerDestination])
 
   // Derived values — dot size is fixed, only pulse speed changes with proximity:
   // far away it breathes slowly, close by it quickens, like a locating pulse.
@@ -795,9 +809,18 @@ function TrackingScreen({ trip, onBack, onCancel, hapticsUnavailable }: { trip: 
   const rippleCount = 2
   const activeLeg = trip.legs[step + 1]
   const wayfinding = activeLeg ? getWayfinding(activeLeg) : { walk: 'Continue toward your destination.', next: 'Follow the route shown on screen.' }
-  const isWalking = legProgress < 0.25
-  const narrative = isWalking ? wayfinding.walk : isApproaching ? trip.narrativesNear[step] : trip.narrativesFar[step]
-  const proximityLabel = isWalking ? 'Walk to pickup' : legProgress < 0.6 ? 'En route' : legProgress < 0.75 ? 'Getting close' : 'Almost there'
+  const isWalking = phase === 'walking' || phase === 'waiting'
+  const narrative = phase === 'waiting'
+    ? 'Stay at your location. Your autonomous shuttle will arrive shortly.'
+    : phase === 'boarding'
+      ? wayfinding.next
+      : phase === 'walking'
+        ? `Exit here and walk to ${activeLeg?.name ?? 'the next stop'}. Follow the signs shown on screen.`
+        : isApproaching
+          ? trip.narrativesNear[step]
+          : trip.narrativesFar[step]
+  const phaseLabel = phase === 'waiting' ? 'Waiting for vehicle' : phase === 'walking' ? 'Walk to next stop' : phase === 'boarding' ? 'Board now' : null
+  const proximityLabel = phaseLabel ?? (legProgress < 0.6 ? 'En route' : legProgress < 0.75 ? 'Getting close' : 'Almost there')
 
   // Map dot interpolated along the actual route segment
   const ep = trip.legEndpoints[Math.min(step, trip.legEndpoints.length - 1)]
