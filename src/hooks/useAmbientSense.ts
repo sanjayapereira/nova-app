@@ -45,10 +45,14 @@ function flushSpeechQueue() {
   utterance.voice = preferredVoice() ?? null
   let finished = false
   let fallbackTimer: number | undefined
+  const pulseTimer = window.setInterval(() => {
+    if (!finished) window.dispatchEvent(new CustomEvent('nova:speech-pulse', { detail: { speechId } }))
+  }, 420)
   const finish = () => {
     if (finished) return
     finished = true
     if (fallbackTimer) window.clearTimeout(fallbackTimer)
+    window.clearInterval(pulseTimer)
     speechBusy = false
     window.dispatchEvent(new CustomEvent('nova:speech-end', { detail: { speechId } }))
     job.onEnd?.()
@@ -59,6 +63,7 @@ function flushSpeechQueue() {
   }
   utterance.onend = finish
   utterance.onerror = finish
+  utterance.onboundary = () => window.dispatchEvent(new CustomEvent('nova:speech-pulse', { detail: { speechId } }))
   window.speechSynthesis.speak(utterance)
   // Some Android voices do not reliably emit onend. Keep UI and phase state
   // from getting stuck if that happens.
